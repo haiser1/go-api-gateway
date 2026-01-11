@@ -1,0 +1,45 @@
+global_plugins: []
+routes: []
+services:
+    - id: b28ac232-2323-4b7c-adbc-1aee1dddd983
+      name: k6-test-service-5-14
+      host: k6.test.host
+      port: 80
+      protocol: ""
+      plugins: []
+    - id: 884fe384-085c-4765-aeb7-8fefdadb3811
+      name: k6-test-service-44-13
+      host: k6.test.host
+      port: 80
+      protocol: ""
+      plugins: []
+    - id: b3a6e6c1-8a89-4948-8a84-7ef36c41c241
+      name: k6-test-service-8-20
+      host: k6.test.host
+      port: 80
+      protocol: ""
+      plugins: []
+    - id: 0934e0e5-b927-47ce-b888-1fe95da68880
+      name: k6-test-service-6-20
+      host: k6.test.host
+      port: 80
+      protocol: ""
+      plugins: []
+    - id: dac601f7-92b4-424d-9389-8c8b5ccfeb86
+      name: k6-test-service-5-23
+      host: k6.test.host
+      port: 80
+      protocol: ""
+      plugins: []
+    - id: 42ca315a-2bf2-45c8-b8bc-8edec317867f
+      name: k6-test-service-1-23
+      host: k6.test.host
+      port: 80
+      protocol: ""
+      plugins: []
+    - id: f577c864-cdf7-407c-8000-57f41b300ffd
+      name: k6-test-service-3-28
+      host: k6.test.host
+      port: 80
+      protocol: ""
+      plugins: []

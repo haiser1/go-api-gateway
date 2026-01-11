@@ -1,0 +1,42 @@
+version: "3.8"
+
+# Buat jaringan kustom agar service bisa saling memanggil by name
+networks:
+  gateway-net:
+    driver: bridge
+
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile # Menggunakan Dockerfile utama
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    networks:
+      - gateway-net
+    # Pastikan mock-server jalan dulu
+    depends_on:
+      - mock-server
+    # Map config.yaml ke dalam container
+    # Ini PENTING agar perubahan config oleh API Manajemen TERSIMPAN
+    volumes:
+      - ./configs:/configs
+
+  mock-server:
+    build:
+      context: .
+      # Menggunakan Dockerfile.mock yang terpisah
+      dockerfile: Dockerfile.mock
+    networks:
+      - gateway-net
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    # Tidak perlu 'ports' karena hanya diakses oleh gateway

@@ -1,0 +1,31 @@
+
+root = "."
+
+tmp_dir = "tmp"
+
+[build]
+# Perintah untuk meng-compile aplikasi Anda
+cmd = "go build -o ./tmp/api-gateway ./cmd/api-gateway/main.go"
+
+# Binary yang akan dijalankan
+bin = "tmp/api-gateway"
+
+# Ekstensi file yang akan dipantau
+include_ext = ["go", "toml", "json", "yaml"]
+
+# Direktori yang akan diabaikan
+exclude_dir = ["bin", "tmp", "vendor"]
+
+# Tunda restart (dalam milidetik) setelah file berubah
+delay = 1000 # 1 detik
+
+[log]
+# Tampilkan waktu di log
+time = true
+
+[color]
+# Aktifkan output berwarna
+main = "cyan"
+watcher = "magenta"
+build = "yellow"
+runner = "green"
