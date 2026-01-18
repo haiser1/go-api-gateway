@@ -18,14 +18,4 @@ test:
 # TARGET BARU UNTUK PENGEMBANGAN (DEVELOPMENT)
 # ===================================================================
 
-# Perintah untuk menjalankan server dalam mode live-reload
-# Ini akan menggunakan file .air.toml
-watch:
-	@echo "Starting server with live-reload (using air)..."
-	@air
-
-# Perintah satu kali untuk menginstal 'air'
-install-air:
-	@echo "Installing air live-reload tool..."
-	@go install github.com/cosmtrek/air@latest
-	@echo "Installing air live-reload tool done"
+# (Tidak ada target khusus pengembangan saat ini karena hot-reload sudah built-in)
