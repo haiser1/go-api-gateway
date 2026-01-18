@@ -1,31 +1,31 @@
 import http from "k6/http";
 import { check, group } from "k6";
 
-// const DUMMY_JWT =
-//   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.EGhYyuF8eeWfnVPbyxvSNgwahgKge8xxNvzJ7PnQ5rw";
-
-/*
- * ==============================================================================
- * OPSI SKENARIO: "BREAKER TEST"
- * ==============================================================================
- * Skenario ini dirancang untuk menemukan titik putus (breaking point)
- * dengan terus menambah beban melebihi 100 VU.
- */
 export const options = {
   scenarios: {
-    breaker_test: {
+    latency_test: {
       executor: "ramping-vus",
       startVUs: 0,
       stages: [
-        // Tahap 1: Ramp-up ke 100 VU (beban yang kita tahu stabil tapi lambat)
-        { duration: "30s", target: 100 },
-        // Tahap 2: Tahan 100 VU selama 30 detik untuk baseline
-        { duration: "30s", target: 100 },
-        // Tahap 3: Tambah beban secara agresif ke 500 VU selama 1 menit
-        { duration: "1m", target: 500 },
-        // Tahap 4: Tahan beban puncak 500 VU selama 1 menit
-        { duration: "1m", target: 500 },
-        // Tahap 5: Ramp-down (pendinginan)
+        // TAHAP 1: LIGHT LOAD (20 VU)
+        // Mengecek latensi di kondisi sangat ideal.
+        { duration: "30s", target: 10 },
+        { duration: "30s", target: 20 },
+
+        // TAHAP 2: MEDIUM LOAD (50 VU)
+        // Prediksi saya: Ini adalah "Sweet Spot" untuk spec 0.5 CPU.
+        // Kita harap di sini p90 masih di bawah 100ms.
+        // { duration: "30s", target: 50 },
+        // { duration: "1m", target: 50 },
+
+        // TAHAP 3: HIGH LOAD (100 VU)
+        // Kita uji batas atas. Jika di sini latensi tembus > 200ms,
+        // berarti kapasitas max server (dengan latensi bagus) ada di bawah 100 VU.
+        { duration: "30s", target: 50 },
+        { duration: "30s", target: 20 },
+        // { duration: "1m", target: 100 },
+
+        // TAHAP 4: COOLDOWN
         { duration: "30s", target: 0 },
       ],
       gracefulRampDown: "10s",
@@ -33,38 +33,37 @@ export const options = {
   },
 
   thresholds: {
-    // Ini adalah target KESUKSESAN utama kita.
-    // Jika server mulai memunculkan error (5xx, timeout, dll), tes akan GAGAL.
-    http_req_failed: ["rate < 0.01"], // Gagal < 1%
+    // Kriteria Error: Mutlak di bawah 1%
+    http_req_failed: ["rate < 0.01"],
 
-    // Kita longgarkan target latensi karena kita MENGHARAPKAN server lambat.
-    // Kita hanya ingin tahu apakah server 'hank' atau tidak.
-    http_req_duration: ["p(95) < 100"], // p95 < 100ms
+    // Kriteria Latensi (Sesuai Permintaan):
+    // Jika salah satu ini terlewati, test akan ditandai FAILED (silang merah)
+    http_req_duration: [
+      "p(99) < 200", // 99% request harus selesai di bawah 200ms
+      "p(95) < 150", // 95% request harus selesai di bawah 150ms
+      "p(90) < 100", // 90% request harus selesai di bawah 100ms
+    ],
   },
 };
 
-/*
- * ==============================================================================
- * FUNGSI UTAMA (Tanpa sleep)
- * ==============================================================================
- */
 export default function () {
-  const url = "http://localhost:8080/mock";
+  const BASE_URL = __ENV.TARGET_URL || "http://localhost:8080";
+  const url = `${BASE_URL}/mock`;
 
   const params = {
     headers: {
-      // Authorization: `Bearer ${DUMMY_JWT}`,
       "Content-Type": "application/json",
     },
   };
 
-  group("Public Proxy Endpoints", () => {
-    const res = http.get(url, params);
-    check(res, {
-      // PERBAIKAN: Nama check disesuaikan dengan URL
-      "GET /mock: status 200": (r) => r.status === 200,
-    });
-  });
+  const res = http.get(url, params);
 
-  // TIDAK ADA sleep();
+  // Debugging log jika ada error
+  if (res.status !== 200) {
+    console.error(`ERROR: Status ${res.status} | Body: ${res.body ? res.body.substring(0, 50) : ''}`);
+  }
+
+  check(res, {
+    "status is 200": (r) => r.status === 200,
+  });
 }

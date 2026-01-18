@@ -24,14 +24,21 @@ func dtoToConfigService(dto domain.AddServiceRequest) config.Service {
 		plugins[i] = config.PluginConfig{Name: p.Name, Config: p.Config}
 	}
 
-	return config.Service{
-		Id:       uuid.NewString(), // Buat ID baru
-		Name:     dto.Name,
-		Host:     dto.Host,
-		Port:     dto.Port,
-		Protocol: dto.Protocol,
-		Plugins:  plugins,
+	svc := config.Service{
+		Id:             uuid.NewString(),
+		Name:           dto.Name,
+		Host:           dto.Host,
+		Port:           dto.Port,
+		Protocol:       dto.Protocol,
+		Plugins:        plugins,
+		Timeout:        dto.Timeout,
+		ConnectTimeout: dto.ConnectTimeout,
+		ReadTimeout:    dto.ReadTimeout,
+		Retries:        dto.Retries,
+		RetryBackoff:   dto.RetryBackoff,
 	}
+	svc.ApplyDefaults()
+	return svc
 }
 
 func dtoToConfigRoute(dto domain.AddRouteRequest) config.Route {
@@ -159,13 +166,18 @@ func (h *ManagementHandler) GetServiceById(w http.ResponseWriter, r *http.Reques
 	}
 
 	response := domain.ServiceDetailResponse{
-		Id:       targetService.Id,
-		Name:     targetService.Name,
-		Protocol: targetService.Protocol, // DIPERBAIKI: 'Protocol'
-		Host:     targetService.Host,
-		Port:     targetService.Port,
-		Plugins:  servicePlugins,
-		Routes:   matchingRoutes,
+		Id:             targetService.Id,
+		Name:           targetService.Name,
+		Protocol:       targetService.Protocol,
+		Host:           targetService.Host,
+		Port:           targetService.Port,
+		Plugins:        servicePlugins,
+		Routes:         matchingRoutes,
+		Timeout:        targetService.Timeout,
+		ConnectTimeout: targetService.ConnectTimeout,
+		ReadTimeout:    targetService.ReadTimeout,
+		Retries:        targetService.Retries,
+		RetryBackoff:   targetService.RetryBackoff,
 	}
 
 	helper.RespondSuccess(w, http.StatusOK, "Service fetched successfully", response)
@@ -203,13 +215,19 @@ func (h *ManagementHandler) UpdateService(w http.ResponseWriter, r *http.Request
 	}
 
 	updatedService := config.Service{
-		Id:       serviceId, // Pertahankan ID dari path
-		Name:     req.Name,
-		Host:     req.Host,
-		Port:     req.Port,
-		Protocol: req.Protocol,
-		Plugins:  plugins,
+		Id:             serviceId,
+		Name:           req.Name,
+		Host:           req.Host,
+		Port:           req.Port,
+		Protocol:       req.Protocol,
+		Plugins:        plugins,
+		Timeout:        req.Timeout,
+		ConnectTimeout: req.ConnectTimeout,
+		ReadTimeout:    req.ReadTimeout,
+		Retries:        req.Retries,
+		RetryBackoff:   req.RetryBackoff,
 	}
+	updatedService.ApplyDefaults()
 
 	if err := h.Manager.UpdateService(serviceId, updatedService); err != nil {
 		helper.RespondError(w, http.StatusNotFound, "Failed to update service", err)

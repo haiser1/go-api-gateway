@@ -17,6 +17,40 @@ type Service struct {
 	Port     int            `yaml:"port" json:"port"`
 	Protocol string         `yaml:"protocol" json:"protocol"`
 	Plugins  []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
+
+	// Timeout settings (in seconds)
+	Timeout        int `yaml:"timeout,omitempty" json:"timeout,omitempty"`                 // Total request timeout (default: 30)
+	ConnectTimeout int `yaml:"connect_timeout,omitempty" json:"connect_timeout,omitempty"` // Connection timeout (default: 10)
+	ReadTimeout    int `yaml:"read_timeout,omitempty" json:"read_timeout,omitempty"`       // Read timeout (default: 30)
+
+	// Retry settings
+	Retries      int     `yaml:"retries,omitempty" json:"retries,omitempty"`             // Number of retries (default: 0)
+	RetryBackoff float64 `yaml:"retry_backoff,omitempty" json:"retry_backoff,omitempty"` // Backoff multiplier (default: 1.5)
+}
+
+// ApplyDefaults sets sensible defaults for zero-value fields
+func (s *Service) ApplyDefaults() {
+	if s.Protocol == "" {
+		s.Protocol = "http"
+	}
+	if s.Port == 0 {
+		s.Port = 8080
+	}
+	if s.Plugins == nil {
+		s.Plugins = []PluginConfig{}
+	}
+	if s.Timeout == 0 {
+		s.Timeout = 30
+	}
+	if s.ConnectTimeout == 0 {
+		s.ConnectTimeout = 10
+	}
+	if s.ReadTimeout == 0 {
+		s.ReadTimeout = 30
+	}
+	if s.RetryBackoff == 0 {
+		s.RetryBackoff = 1.5
+	}
 }
 
 type Route struct {
@@ -29,6 +63,7 @@ type Route struct {
 }
 
 type Config struct {
+	LogLevel      string         `yaml:"log_level" json:"log_level"`
 	GlobalPlugins []PluginConfig `yaml:"global_plugins" json:"global_plugins"`
 	Services      []Service      `yaml:"services" json:"services"`
 	Routes        []Route        `yaml:"routes" json:"routes"`
@@ -39,15 +74,11 @@ type Manager struct {
 	mu           sync.Mutex
 	configPath   string
 	config       *Config // The current "write" source of truth
-	atomicConfig atomic.Value
+	atomicConfig atomic.Pointer[Config]
 	Reload       chan struct{}
 }
 
 // GetConfig returns the current configuration (thread-safe, lock-free).
 func (m *Manager) GetConfig() *Config {
-	val := m.atomicConfig.Load()
-	if val == nil {
-		return nil
-	}
-	return val.(*Config)
+	return m.atomicConfig.Load()
 }

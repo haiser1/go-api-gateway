@@ -1,6 +1,10 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/rs/zerolog/log"
+)
 
 // --- Helper internal (locked) ---
 
@@ -35,7 +39,11 @@ func (m *Manager) AddService(s Service) error {
 	}
 	m.config.Services = append(m.config.Services, s)
 
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("service_id", s.Id).Str("service_name", s.Name).Msg("Service added")
+	}
+	return err
 }
 
 func (m *Manager) UpdateService(serviceId string, updatedService Service) error {
@@ -56,7 +64,11 @@ func (m *Manager) UpdateService(serviceId string, updatedService Service) error 
 	if !found {
 		return fmt.Errorf("service dengan ID '%s' tidak ditemukan", serviceId)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("service_id", serviceId).Str("service_name", updatedService.Name).Msg("Service updated")
+	}
+	return err
 }
 
 func (m *Manager) DeleteService(serviceId string) error {
@@ -81,5 +93,9 @@ func (m *Manager) DeleteService(serviceId string) error {
 		return fmt.Errorf("service dengan ID '%s' tidak ditemukan", serviceId)
 	}
 	m.config.Services = newServices
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("service_id", serviceId).Msg("Service deleted")
+	}
+	return err
 }

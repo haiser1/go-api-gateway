@@ -23,3 +23,14 @@ func (p PluginFunc) Name() string {
 func (p PluginFunc) Execute(w http.ResponseWriter, r *http.Request, next http.Handler) bool {
 	return p.Handler(w, r, next)
 }
+
+// PluginBuilder adalah fungsi yang membuat PluginMiddleware dari konfigurasi
+type PluginBuilder func(config map[string]interface{}) PluginMiddleware
+
+// pluginRegistry menyimpan semua plugin yang terdaftar
+var pluginRegistry = make(map[string]PluginBuilder)
+
+// RegisterPlugin mendaftarkan plugin builder dengan nama tertentu
+func RegisterPlugin(name string, builder PluginBuilder) {
+	pluginRegistry[name] = builder
+}

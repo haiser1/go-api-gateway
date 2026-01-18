@@ -2,12 +2,12 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,8 +31,7 @@ func NewManager(configDir string) (*Manager, error) {
 	return m, nil
 }
 
-// loadConfigFromFile reads and parses the config file.
-// It updates both m.config (locked) and m.atomicConfig.
+// loadConfigFromFile reads, parses, and updates atomic config.
 func (m *Manager) loadConfigFromFile() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -52,26 +51,28 @@ func (m *Manager) loadConfigFromFile() error {
 	return nil
 }
 
-// watchConfig watches for file changes.
+// watchConfig watches the DIRECTORY for file changes with debouncing.
 func (m *Manager) watchConfig() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Printf("Failed to create file watcher: %v", err)
+		log.Error().Err(err).Msg("Failed to create file watcher")
 		return
 	}
 	defer watcher.Close()
 
-	if err := watcher.Add(m.configPath); err != nil {
-		// Fallback: observe directory if file watch fails (rare) or if file doesn't exist initially?
-		// But loadConfigFromFile succeeded, so file exists.
-		// Some editors delete and recreate files (atomic save), so watching dir is safer?
-		// Let's watch the directory instead.
-		configDir := filepath.Dir(m.configPath)
-		if errDir := watcher.Add(configDir); errDir != nil {
-			log.Printf("Failed to watch config directory: %v", errDir)
-			return
-		}
+	configDir := filepath.Dir(m.configPath)
+	configFile := filepath.Base(m.configPath)
+
+	// OPTIMASI 1: Pantau Direktori, bukan File.
+	// Ini menangani "Atomic Save" (Rename/Replace) dari editor modern.
+	if err := watcher.Add(configDir); err != nil {
+		log.Error().Err(err).Str("dir", configDir).Msg("Failed to watch config directory")
+		return
 	}
+
+	// Debounce timer - coalesce rapid events
+	const debounceDelay = 100 * time.Millisecond
+	var debounceTimer *time.Timer
 
 	for {
 		select {
@@ -79,89 +80,101 @@ func (m *Manager) watchConfig() {
 			if !ok {
 				return
 			}
-			// Check if it's our config file
-			if filepath.Base(event.Name) == filepath.Base(m.configPath) {
-				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
-					log.Println("Config file changed:", event.Name)
-					// Small delay to ensure write is complete (sometimes helpful with some editors)
-					time.Sleep(50 * time.Millisecond)
 
-					if err := m.loadConfigFromFile(); err != nil {
-						log.Printf("Failed to reload config: %v", err)
-					} else {
-						// Notify reload
-						select {
-						case m.Reload <- struct{}{}:
-						default:
-						}
+			// Filter: Hanya peduli jika file target yang berubah
+			if filepath.Base(event.Name) == configFile {
+				// OPTIMASI 2: Tangkap event Rename/Chmod juga (karena atomic save)
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
+
+					// Reset debounce timer
+					if debounceTimer != nil {
+						debounceTimer.Stop()
 					}
+
+					debounceTimer = time.AfterFunc(debounceDelay, func() {
+						log.Info().Str("file", configFile).Msg("Config changed detected, reloading...")
+
+						if err := m.loadConfigFromFile(); err != nil {
+							log.Error().Err(err).Msg("Failed to reload config")
+						} else {
+							// Notify reload (Non-blocking send)
+							select {
+							case m.Reload <- struct{}{}:
+							default:
+							}
+							log.Info().Msg("Config reloaded successfully")
+						}
+					})
 				}
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return
 			}
-			log.Printf("Watcher error: %v", err)
+			log.Error().Err(err).Msg("Watcher error")
 		}
 	}
 }
 
-// WriteConfigSafe backs up the config file and writes the new config.
-// Callers must hold m.mu (implied because they edit m.config).
-func (m *Manager) WriteConfigSafe() error {
-	// Helper to write bytes to file with backup
-	data, err := yaml.Marshal(m.config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
+// Helper Internal: Backup dan Tulis File (Menghindari Duplikasi Kode)
+// Fungsi ini tidak menggunakan Lock sendiri, caller harus hold Lock.
+func (m *Manager) backupAndWriteFileLocked(data []byte) error {
+	// 1. Backup file lama jika ada
 	if _, err := os.Stat(m.configPath); err == nil {
 		backup := fmt.Sprintf("%s.bak-%d", m.configPath, time.Now().Unix())
-		// Read old file to backup (don't rely on m.config for backup, backup what's on disk)
 		oldData, err := os.ReadFile(m.configPath)
 		if err == nil {
 			_ = os.WriteFile(backup, oldData, 0644)
 		}
 	}
 
+	// 2. Tulis file baru
 	if err := os.WriteFile(m.configPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	return nil
 }
 
-// saveAndReloadLocked saves changes to file and updates atomic config.
-// Callers must ALREADY HOLD m.mu.
-func (m *Manager) saveAndReloadLocked() error {
-	// 1. Marshal current config (which was modified by caller)
+// WriteConfigSafe is a public wrapper if needed by other components
+// Note: This assumes m.config is already modified by caller.
+// But wait, callers (AddRoute, etc) hold the lock.
+// This function needs to be careful not to double lock if used internally.
+// BETTER: Use saveAndReloadLocked for internal use. This is just for "Save Current State".
+func (m *Manager) WriteConfigSafe() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	data, err := yaml.Marshal(m.config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// 2. Backup
-	if _, err := os.Stat(m.configPath); err == nil {
-		backup := fmt.Sprintf("%s.bak-%d", m.configPath, time.Now().Unix())
-		oldData, _ := os.ReadFile(m.configPath)
-		_ = os.WriteFile(backup, oldData, 0644)
+	return m.backupAndWriteFileLocked(data)
+}
+
+// saveAndReloadLocked saves changes to file and updates atomic config.
+// Callers must ALREADY HOLD m.mu.
+func (m *Manager) saveAndReloadLocked() error {
+	// 1. Marshal current config
+	data, err := yaml.Marshal(m.config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// 3. Write to file
-	if err := os.WriteFile(m.configPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+	// 2. Backup & Write (DRY: Pakai helper)
+	if err := m.backupAndWriteFileLocked(data); err != nil {
+		return err
 	}
 
-	// 4. Create fresh copy specifically for atomic (decodes from bytes to ensure clean state)
+	// 3. Create fresh copy specifically for atomic (decodes from bytes to ensure clean state)
 	var newCfg Config
 	if err := yaml.Unmarshal(data, &newCfg); err != nil {
 		return fmt.Errorf("failed to unmarshal just-saved config: %w", err)
 	}
 
-	// Update atomic
-	m.atomicConfig.Store(&newCfg)
-
-	// Update m.config to point to newCfg as well
-	m.config = &newCfg
+	// 4. Update memory pointers
+	m.atomicConfig.Store(&newCfg) // Untuk Proxy (Lock-free)
+	m.config = &newCfg            // Untuk CRUD selanjutnya
 
 	// 5. Notify
 	select {

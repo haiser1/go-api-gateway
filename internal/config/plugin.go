@@ -1,6 +1,10 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/rs/zerolog/log"
+)
 
 // ========================================================
 // PENGELOLAAN PLUGIN (CRUD)
@@ -18,7 +22,11 @@ func (m *Manager) AddGlobalPlugin(p PluginConfig) error {
 		}
 	}
 	m.config.GlobalPlugins = append(m.config.GlobalPlugins, p)
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("plugin", p.Name).Msg("Global plugin added")
+	}
+	return err
 }
 
 func (m *Manager) UpdateGlobalPlugin(pluginName string, p PluginConfig) error {
@@ -36,7 +44,11 @@ func (m *Manager) UpdateGlobalPlugin(pluginName string, p PluginConfig) error {
 	if !found {
 		return fmt.Errorf("global plugin '%s' tidak ditemukan", pluginName)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("plugin", pluginName).Msg("Global plugin updated")
+	}
+	return err
 }
 
 func (m *Manager) DeleteGlobalPlugin(pluginName string) error {
@@ -56,7 +68,11 @@ func (m *Manager) DeleteGlobalPlugin(pluginName string) error {
 		return fmt.Errorf("global plugin '%s' tidak ditemukan", pluginName)
 	}
 	m.config.GlobalPlugins = newPlugins
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("plugin", pluginName).Msg("Global plugin deleted")
+	}
+	return err
 }
 
 // --- Plugin di Service ---
@@ -81,7 +97,11 @@ func (m *Manager) AddPluginToService(serviceId string, p PluginConfig) error {
 	if !serviceFound {
 		return fmt.Errorf("service dengan ID '%s' tidak ditemukan", serviceId)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("service_id", serviceId).Str("plugin", p.Name).Msg("Service plugin added")
+	}
+	return err
 }
 
 func (m *Manager) UpdatePluginInService(serviceId string, pluginName string, newPluginConfig PluginConfig) error {
@@ -109,7 +129,11 @@ func (m *Manager) UpdatePluginInService(serviceId string, pluginName string, new
 	if !pluginFound {
 		return fmt.Errorf("plugin '%s' tidak ditemukan di service", pluginName)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("service_id", serviceId).Str("plugin", pluginName).Msg("Service plugin updated")
+	}
+	return err
 }
 
 func (m *Manager) DeletePluginFromService(serviceId string, pluginName string) error {
@@ -141,7 +165,11 @@ func (m *Manager) DeletePluginFromService(serviceId string, pluginName string) e
 	if !pluginFound {
 		return fmt.Errorf("plugin '%s' tidak ditemukan di service", pluginName)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("service_id", serviceId).Str("plugin", pluginName).Msg("Service plugin deleted")
+	}
+	return err
 }
 
 // --- Plugin di Route ---
@@ -166,7 +194,11 @@ func (m *Manager) AddPluginToRoute(routeId string, p PluginConfig) error {
 	if !routeFound {
 		return fmt.Errorf("route dengan ID '%s' tidak ditemukan", routeId)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("route_id", routeId).Str("plugin", p.Name).Msg("Route plugin added")
+	}
+	return err
 }
 
 func (m *Manager) UpdatePluginInRoute(routeId string, pluginName string, newPluginConfig PluginConfig) error {
@@ -194,7 +226,11 @@ func (m *Manager) UpdatePluginInRoute(routeId string, pluginName string, newPlug
 	if !pluginFound {
 		return fmt.Errorf("plugin '%s' tidak ditemukan di route", pluginName)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("route_id", routeId).Str("plugin", pluginName).Msg("Route plugin updated")
+	}
+	return err
 }
 
 func (m *Manager) DeletePluginFromRoute(routeId string, pluginName string) error {
@@ -226,5 +262,9 @@ func (m *Manager) DeletePluginFromRoute(routeId string, pluginName string) error
 	if !pluginFound {
 		return fmt.Errorf("plugin '%s' tidak ditemukan di route", pluginName)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("route_id", routeId).Str("plugin", pluginName).Msg("Route plugin deleted")
+	}
+	return err
 }

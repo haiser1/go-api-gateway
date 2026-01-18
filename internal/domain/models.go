@@ -10,10 +10,19 @@ type Plugin struct {
 
 type AddServiceRequest struct {
 	Name     string   `json:"name" binding:"required"`
-	Protocol string   `json:"protocol"` // Sesuai config manager
+	Protocol string   `json:"protocol"`
 	Host     string   `json:"host" binding:"required"`
-	Port     int      `json:"port" binding:"required"`
+	Port     int      `json:"port"`
 	Plugins  []Plugin `json:"plugins,omitempty"`
+
+	// Timeout settings (in seconds)
+	Timeout        int `json:"timeout,omitempty"`
+	ConnectTimeout int `json:"connect_timeout,omitempty"`
+	ReadTimeout    int `json:"read_timeout,omitempty"`
+
+	// Retry settings
+	Retries      int     `json:"retries,omitempty"`
+	RetryBackoff float64 `json:"retry_backoff,omitempty"`
 }
 
 type AddRouteRequest struct {
@@ -26,10 +35,19 @@ type AddRouteRequest struct {
 
 type UpdateServiceRequest struct {
 	Name     string   `json:"name" binding:"required"`
-	Protocol string   `json:"protocol"` // Sesuai config manager
+	Protocol string   `json:"protocol"`
 	Host     string   `json:"host" binding:"required"`
-	Port     int      `json:"port" binding:"required"`
+	Port     int      `json:"port"`
 	Plugins  []Plugin `json:"plugins,omitempty"`
+
+	// Timeout settings (in seconds)
+	Timeout        int `json:"timeout,omitempty"`
+	ConnectTimeout int `json:"connect_timeout,omitempty"`
+	ReadTimeout    int `json:"read_timeout,omitempty"`
+
+	// Retry settings
+	Retries      int     `json:"retries,omitempty"`
+	RetryBackoff float64 `json:"retry_backoff,omitempty"`
 }
 
 type UpdateRouteRequest struct {
@@ -55,11 +73,20 @@ type RouteDetail struct {
 type ServiceDetailResponse struct {
 	Id       string        `json:"id"`
 	Name     string        `json:"name"`
-	Protocol string        `json:"protocol"` // Sesuai config manager
+	Protocol string        `json:"protocol"`
 	Host     string        `json:"host"`
 	Port     int           `json:"port"`
 	Plugins  []Plugin      `json:"plugins,omitempty"`
-	Routes   []RouteDetail `json:"routes"` // Daftar rute yang terkait
+	Routes   []RouteDetail `json:"routes"`
+
+	// Timeout settings
+	Timeout        int `json:"timeout,omitempty"`
+	ConnectTimeout int `json:"connect_timeout,omitempty"`
+	ReadTimeout    int `json:"read_timeout,omitempty"`
+
+	// Retry settings
+	Retries      int     `json:"retries,omitempty"`
+	RetryBackoff float64 `json:"retry_backoff,omitempty"`
 }
 
 // ServiceSnapshot adalah DTO simpel untuk disematkan dalam RouteDetail
@@ -75,5 +102,5 @@ type RouteDetailResponse struct {
 	Methods []string         `json:"methods"`
 	Paths   []string         `json:"paths"`
 	Plugins []Plugin         `json:"plugins,omitempty"`
-	Service *ServiceSnapshot `json:"service"` // Snapshot disematkan di sini
+	Service *ServiceSnapshot `json:"service"`
 }

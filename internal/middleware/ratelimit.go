@@ -10,19 +10,22 @@ import (
 
 func init() {
 	gateway.RegisterPlugin("rate-limiting", func(config map[string]interface{}) gateway.PluginMiddleware {
-		reqLimit, _ := config["requests_per_minute"].(float64)
-		if reqLimit == 0 {
+		reqLimitFloat, _ := config["requests_per_minute"].(float64) // JSON angka biasanya float64
+		reqLimit := int(reqLimitFloat)
+		if reqLimit <= 0 {
 			reqLimit = 60
 		}
 
-		mu := sync.Mutex{}
+		var mu sync.Mutex
 		requests := make(map[string]int)
-		resetTicker := time.NewTicker(time.Minute)
 
-		// Reset counter setiap 1 menit
+		// Goroutine pembersih
 		go func() {
-			for range resetTicker.C {
+			ticker := time.NewTicker(1 * time.Minute)
+			for range ticker.C {
 				mu.Lock()
+				// Reset map sepenuhnya untuk mencegah memory leak
+				// (Garbage collector akan membersihkan map lama)
 				requests = make(map[string]int)
 				mu.Unlock()
 			}
@@ -32,13 +35,16 @@ func init() {
 			NameStr: "rate-limiting",
 			Handler: func(w http.ResponseWriter, r *http.Request, next http.Handler) bool {
 				ip := r.RemoteAddr
+				// Note: Di production sebaiknya pakai X-Forwarded-For jika di belakang LB,
+				// tapi r.RemoteAddr cukup untuk skripsi docker network.
+
 				mu.Lock()
 				requests[ip]++
 				count := requests[ip]
 				mu.Unlock()
 
-				if count > int(reqLimit) {
-					http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+				if count > reqLimit {
+					http.Error(w, `{"error": "Rate limit exceeded"}`, http.StatusTooManyRequests)
 					return false
 				}
 

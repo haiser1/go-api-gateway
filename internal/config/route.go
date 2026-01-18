@@ -1,6 +1,10 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/rs/zerolog/log"
+)
 
 func (m *Manager) routeNameExistsLocked(name string, excludeId string) bool {
 	for _, r := range m.config.Routes {
@@ -26,7 +30,11 @@ func (m *Manager) AddRoute(r Route) error {
 		return fmt.Errorf("service dengan ID '%s' tidak ditemukan", r.ServiceId)
 	}
 	m.config.Routes = append(m.config.Routes, r)
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("route_id", r.Id).Str("route_name", r.Name).Msg("Route added")
+	}
+	return err
 }
 
 func (m *Manager) UpdateRoute(routeId string, updatedRoute Route) error {
@@ -50,7 +58,11 @@ func (m *Manager) UpdateRoute(routeId string, updatedRoute Route) error {
 	if !found {
 		return fmt.Errorf("route dengan ID '%s' tidak ditemukan", routeId)
 	}
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("route_id", routeId).Str("route_name", updatedRoute.Name).Msg("Route updated")
+	}
+	return err
 }
 
 func (m *Manager) DeleteRoute(routeId string) error {
@@ -70,5 +82,9 @@ func (m *Manager) DeleteRoute(routeId string) error {
 		return fmt.Errorf("route dengan ID '%s' tidak ditemukan", routeId)
 	}
 	m.config.Routes = newRoutes
-	return m.saveAndReloadLocked()
+	err := m.saveAndReloadLocked()
+	if err == nil {
+		log.Info().Str("route_id", routeId).Msg("Route deleted")
+	}
+	return err
 }
