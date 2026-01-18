@@ -1,9 +1,10 @@
 package middleware
 
 import (
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/haiser1/go-api-gateway/internal/gateway"
 )
@@ -39,14 +40,14 @@ func init() {
 
 				duration := time.Since(start)
 
-				// Log the request details
-				log.Printf(
-					"[INFO] Method: %s | URI: %s | Status: %d | Duration: %s",
-					r.Method,
-					r.RequestURI,
-					rw.statusCode,
-					duration,
-				)
+				// Log the request details using Zerolog
+				log.Info().
+					Str("method", r.Method).
+					Str("uri", r.RequestURI).
+					Int("status", rw.statusCode).
+					Dur("duration", duration).
+					Str("protocol", r.Proto). // Added protocol field
+					Msg("Request processed")
 
 				return true // Always continue the chain (logging is passive)
 			},

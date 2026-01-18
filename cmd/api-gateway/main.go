@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/haiser1/go-api-gateway/internal/config"
 	"github.com/haiser1/go-api-gateway/internal/gateway"
@@ -18,14 +20,33 @@ import (
 func main() {
 	cfgManager, err := config.NewManager("configs")
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatal().Err(err).Msg("Failed to load config")
 	}
+
+	// --- Configure Logging ---
+	cfg := cfgManager.GetConfig()
+	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		logLevel = zerolog.InfoLevel // Default
+	}
+	zerolog.SetGlobalLevel(logLevel)
+
+	// Optional: Pretty logging for development if running in terminal?
+	// But let's stick to standard/JSON by default properly.
+	// User asked "zerolog", usually implies structured logs.
+	// But let's check if we want human readable for dev convenience or just JSON.
+	// Standard practice: if no TTY, JSON. If TTY, Console.
+	// For simplicity and user request "use zerolog", I'll just init global logger.
+	// Let's use standard out.
+	log.Logger = log.Output(os.Stderr) // Default zerolog writes to stderr usually or stdout? Default is stderr.
+
+	log.Info().Str("level", logLevel.String()).Msg("Logger initialized")
 
 	server := gateway.NewServer(cfgManager)
 
 	go func() {
 		if err := server.Start(); err != nil {
-			log.Fatalf("Server Error: %v", err)
+			log.Fatal().Err(err).Msg("Server Error")
 		}
 	}()
 
@@ -37,8 +58,8 @@ func main() {
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Failed to shutdown server: %v", err)
+		log.Fatal().Err(err).Msg("Failed to shutdown server")
 	}
 
-	log.Println("Server Stopped")
+	log.Info().Msg("Server Stopped")
 }
