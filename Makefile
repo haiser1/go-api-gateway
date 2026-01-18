@@ -1,9 +1,20 @@
-.PHONY: run build test watch install-air
+.PHONY: run run-dev build test
 
-# Perintah 'run' ini sekarang untuk eksekusi normal (seperti produksi)
+# ===================================================================
+# RUN COMMANDS
+# ===================================================================
+
+# Perintah 'run' (Production Mode)
 run: build
 	@echo "Starting server (production mode)..."
 	./bin/api-gateway
+
+# Perintah 'run-dev' (Development Mode)
+# Menggunakan 'go run' untuk iterasi cepat tanpa build artifact permanen
+run-dev:
+	@echo "Starting server (development mode)..."
+	@go run ./cmd/api-gateway/main.go
+
 
 # Perintah 'build' untuk membuat binary produksi
 build:
@@ -13,9 +24,3 @@ build:
 # Perintah 'test'
 test:
 	@go test -v ./...
-
-# ===================================================================
-# TARGET BARU UNTUK PENGEMBANGAN (DEVELOPMENT)
-# ===================================================================
-
-# (Tidak ada target khusus pengembangan saat ini karena hot-reload sudah built-in)

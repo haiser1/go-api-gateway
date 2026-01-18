@@ -1,25 +1,14 @@
-# Stage 1: Build
+# Filename: Dockerfile.mock
 FROM golang:1.24-alpine AS builder
 
-# Set workdir
 WORKDIR /app
+# Copy hanya file mock server
+COPY mock-server/main.go .
 
-# 1. Salin go.mod/go.sum (dari root)
-# Ini PENTING untuk 'go build' agar menemukan modules
-COPY go.mod go.sum ./
-RUN go mod download
+# Build binary
+RUN CGO_ENABLED=0 GOOS=linux go build -o /mock-server main.go
 
-# 2. Buat sub-direktori untuk mock-server
-WORKDIR /app/mock-server
-# 3. Salin HANYA kode mock-server
-# Path ini benar karena build context kita adalah root ('.')
-COPY ./mock-server/main.go .
-
-# 4. Build DARI DALAM sub-direktori
-# (Go akan otomatis menemukan go.mod di /app)
-RUN go build -o /mock-server .
-
-# Stage 2: Final Image
+# Final stage - Scratch (sangat ringan)
 FROM scratch
 COPY --from=builder /mock-server /mock-server
 EXPOSE 9090
