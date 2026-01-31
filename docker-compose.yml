@@ -8,7 +8,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: skripsi-gateway
+    container_name: go-api-gateway
     ports:
       - "8080:8080"
     environment:
@@ -20,8 +20,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'        # Batasi 0.5 core
-          memory: 256M       # Batasi 256MB RAM
+          cpus: '0.5' # Batasi 0.5 core
+          memory: 256M # Batasi 256MB RAM
 
   # -------------------------------------------------------
   # 2. Mock Server (Upstream Service)
@@ -30,29 +30,25 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mock
-    container_name: skripsi-mock
+    container_name: mock-server
     ports:
       - "9090:9090"
     deploy:
       resources:
         limits:
-          cpus: '0.2'        # Mock sangat ringan
-          memory: 64M
+          cpus: '1' # Mock sangat ringan
+          memory: 1G
 
   # -------------------------------------------------------
   # 3. K6 Load Tester
   # -------------------------------------------------------
   k6:
     image: grafana/k6:latest
-    container_name: skripsi-k6
+    container_name: k6-load-test
     depends_on:
       - api-gateway
     environment:
-      # Inject URL target ke script k6
       - TARGET_URL=http://api-gateway:8080
     volumes:
-      # Mount folder performance lokal ke dalam container
       - ./performance:/scripts
-    # Perintah jalankan test
-    # Ganti 'breaker_test.js' dengan nama file script Anda yang sebenarnya
     command: run /scripts/load-test.js

@@ -1,4 +1,4 @@
-log_level: debug
+log_level: info
 global_plugins: []
 services:
     - id: b28ac232-2323-4b7c-adbc-1aee1dddd983
