@@ -2,28 +2,24 @@ package gateway
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/haiser1/go-api-gateway/internal/config"
 	"github.com/rs/zerolog/log"
 )
 
-// ResolvedRoute menyimpan semua yang dibutuhkan untuk memproses request
-// tanpa perlu alokasi memori lagi saat runtime.
 type ResolvedRoute struct {
 	Method      string
-	PathPattern string // Path asli dari config (misal: /api/users/:id)
+	PathPattern string
 	TargetURL   *url.URL
 	Plugins     []config.PluginConfig
 
-	// Pre-built Reverse Proxy (OPTIMASI UTAMA)
+	// Pre-built Reverse Proxy
 	ProxyHandler *httputil.ReverseProxy
 
 	// Regex Optimizations
@@ -64,19 +60,14 @@ func (p *Proxy) buildRoutingTable(cfg *config.Config) ([]ResolvedRoute, []config
 		// Resolve Plugin Chain
 		resolvedPlugins := p.resolvePluginChain(route, service, cfg.GlobalPlugins)
 
-		// Create per-service transport with timeout settings
-		serviceTransport := &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout: time.Duration(service.ConnectTimeout) * time.Second,
-			}).DialContext,
-			ResponseHeaderTimeout: time.Duration(service.ReadTimeout) * time.Second,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   10,
-			IdleConnTimeout:       90 * time.Second,
-		}
+		// Get cached transport for this service (global instance per service ID)
+		baseTransport := GetServiceTransport(service)
+
+		// Wrap with circuit breaker (uses service ID for breaker lookup)
+		cbTransport := NewCircuitBreakerTransport(baseTransport, service.Id)
 
 		rp := httputil.NewSingleHostReverseProxy(targetURL)
-		rp.Transport = &latencyTransport{wrapped: serviceTransport}
+		rp.Transport = cbTransport
 
 		// Custom Error Handler agar JSON response-nya rapi
 		rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -99,11 +90,8 @@ func (p *Proxy) buildRoutingTable(cfg *config.Config) ([]ResolvedRoute, []config
 					ProxyHandler: rp,
 				}
 
-				// Compile Regex jika ada parameter (:)
 				if strings.Contains(path, ":") {
 					rr.IsRegex = true
-					// Ubah /api/:id menjadi regex /api/[^/]+
-					// Gunakan ^ dan $ agar match-nya presisi
 					reStr := regexp.MustCompile(`:[^/]+`).ReplaceAllString(path, `[^/]+`)
 					rr.Regex = regexp.MustCompile("^" + reStr + "$")
 				}
@@ -113,19 +101,14 @@ func (p *Proxy) buildRoutingTable(cfg *config.Config) ([]ResolvedRoute, []config
 		}
 	}
 
-	// --- SORTING LOGIC (PENTING) ---
-	// Kita urutkan agar:
-	// 1. Route statis (bukan regex) dicek duluan (karena lebih spesifik).
-	// 2. Jika sama-sama statis/regex, path yang lebih panjang dicek duluan.
 	sort.Slice(routes, func(i, j int) bool {
-		// Rule 1: Non-Regex menang lawan Regex
 		if !routes[i].IsRegex && routes[j].IsRegex {
 			return true
 		}
 		if routes[i].IsRegex && !routes[j].IsRegex {
 			return false
 		}
-		// Rule 2: Path lebih panjang menang (Longest Prefix Match)
+
 		return len(routes[i].PathPattern) > len(routes[j].PathPattern)
 	})
 
@@ -133,7 +116,6 @@ func (p *Proxy) buildRoutingTable(cfg *config.Config) ([]ResolvedRoute, []config
 }
 
 func (p *Proxy) resolvePluginChain(route config.Route, service config.Service, globalPlugins []config.PluginConfig) []config.PluginConfig {
-	// Logic pewarisan plugin tetap sama (Override map)
 	pluginMap := make(map[string]config.PluginConfig)
 
 	for _, p := range globalPlugins {

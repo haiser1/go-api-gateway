@@ -1,79 +1,140 @@
 package gateway
 
 import (
-	"fmt"
-	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
 
-// --- CIRCUIT BREAKER & TRANSPORT ---
+// Circuit breaker states
+const (
+	StateClosed   = iota // Normal operation
+	StateOpen            // Blocking requests
+	StateHalfOpen        // Testing with single request
+)
 
-type BreakerState struct {
-	mu          sync.RWMutex
-	isDown      bool
-	lastFailure time.Time
+// Circuit breaker configuration
+const (
+	failureThreshold = 5                // Open after 5 consecutive failures
+	breakerTimeout   = 30 * time.Second // Time before trying half-open
+)
+
+type CircuitBreaker struct {
+	mu              sync.Mutex
+	state           int
+	failureCount    int
+	lastFailureTime time.Time
+	halfOpenProbe   atomic.Bool // Prevents thundering herd in half-open
 }
 
-const breakerTimeout = 30 * time.Second
+// NewCircuitBreaker creates a new circuit breaker in closed state
+func NewCircuitBreaker() *CircuitBreaker {
+	return &CircuitBreaker{state: StateClosed}
+}
 
-func (b *BreakerState) IsDown() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if !b.isDown {
+// AllowRequest checks if a request should be allowed through
+func (cb *CircuitBreaker) AllowRequest() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case StateClosed:
+		return true
+
+	case StateOpen:
+		// Check if timeout has passed
+		if time.Since(cb.lastFailureTime) > breakerTimeout {
+			cb.state = StateHalfOpen
+			log.Info().Msg("Circuit Breaker: Transitioned to HALF-OPEN state")
+			// Fall through to half-open logic
+		} else {
+			return false
+		}
+		fallthrough
+
+	case StateHalfOpen:
+		// Only allow ONE probe request to prevent thundering herd
+		// Use CompareAndSwap to ensure only one goroutine wins
+		if cb.halfOpenProbe.CompareAndSwap(false, true) {
+			log.Debug().Msg("Circuit Breaker: Allowing single probe request")
+			return true
+		}
+		// Another request is already probing
 		return false
 	}
-	if time.Since(b.lastFailure) > breakerTimeout {
-		return false // Half-open logic (allow retry)
+
+	return false
+}
+
+// RecordSuccess records a successful request
+func (cb *CircuitBreaker) RecordSuccess() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case StateHalfOpen:
+		// Probe succeeded, close the circuit
+		cb.state = StateClosed
+		cb.failureCount = 0
+		cb.halfOpenProbe.Store(false)
+		log.Info().Msg("Circuit Breaker: CLOSED - Service recovered")
+	case StateClosed:
+		// Reset failure count on success
+		cb.failureCount = 0
 	}
-	return true
 }
 
-func (b *BreakerState) RecordFailure() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.isDown = true
-	b.lastFailure = time.Now()
-}
+// RecordFailure records a failed request
+func (cb *CircuitBreaker) RecordFailure() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
-func (b *BreakerState) RecordSuccess() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.isDown {
-		b.isDown = false
-		log.Info().Msg("Circuit Breaker: Sirkuit ditutup, service kembali online.")
-	}
-}
+	cb.lastFailureTime = time.Now()
 
-var serviceBreakers sync.Map
-
-func getBreaker(host string) *BreakerState {
-	iface, _ := serviceBreakers.LoadOrStore(host, &BreakerState{})
-	return iface.(*BreakerState)
-}
-
-type latencyTransport struct {
-	wrapped http.RoundTripper
-}
-
-func (t *latencyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	host := r.Host
-	breaker := getBreaker(host)
-
-	if breaker.IsDown() {
-		return nil, fmt.Errorf("circuit breaker is open for %s", host)
+	if cb.state == StateHalfOpen {
+		// Probe failed, back to open
+		cb.state = StateOpen
+		cb.halfOpenProbe.Store(false)
+		log.Warn().Msg("Circuit Breaker: OPEN - Probe request failed")
+		return
 	}
 
-	resp, err := t.wrapped.RoundTrip(r)
-
-	if err != nil || (resp != nil && resp.StatusCode >= 500) {
-		breaker.RecordFailure()
-		log.Error().Err(err).Str("host", host).Msg("Upstream failure")
-	} else {
-		breaker.RecordSuccess()
+	cb.failureCount++
+	if cb.failureCount >= failureThreshold {
+		cb.state = StateOpen
+		log.Warn().Int("failures", cb.failureCount).Msg("Circuit Breaker: OPEN - Failure threshold reached")
 	}
+}
 
-	return resp, err
+// GetState returns current state for monitoring
+func (cb *CircuitBreaker) GetState() string {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	switch cb.state {
+	case StateClosed:
+		return "CLOSED"
+	case StateOpen:
+		return "OPEN"
+	case StateHalfOpen:
+		return "HALF-OPEN"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+// --- CIRCUIT BREAKER REGISTRY ---
+
+// circuitBreakers stores circuit breakers by service ID
+var circuitBreakers sync.Map
+
+// GetCircuitBreaker returns or creates a circuit breaker for a service
+func GetCircuitBreaker(serviceId string) *CircuitBreaker {
+	if cb, ok := circuitBreakers.Load(serviceId); ok {
+		return cb.(*CircuitBreaker)
+	}
+	cb := NewCircuitBreaker()
+	actual, _ := circuitBreakers.LoadOrStore(serviceId, cb)
+	return actual.(*CircuitBreaker)
 }
