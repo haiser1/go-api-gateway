@@ -11,13 +11,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Add watcher to Manager struct
+// (Removed - moved to config.go)
+
 // NewManager creates a new Manager instance.
 func NewManager(configDir string) (*Manager, error) {
 	configPath := filepath.Join(configDir, "config.yaml")
 
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create watcher: %w", err)
+	}
+
 	m := &Manager{
 		configPath: configPath,
 		Reload:     make(chan struct{}, 1),
+		watcher:    watcher,
+		done:       make(chan struct{}),
 	}
 
 	// Load initial config
@@ -53,11 +63,7 @@ func (m *Manager) loadConfigFromFile() error {
 
 // watchConfig watches the DIRECTORY for file changes with debouncing.
 func (m *Manager) watchConfig() {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create file watcher")
-		return
-	}
+	watcher := m.watcher
 	defer watcher.Close()
 
 	configDir := filepath.Dir(m.configPath)
@@ -76,6 +82,9 @@ func (m *Manager) watchConfig() {
 
 	for {
 		select {
+		case <-m.done:
+			return
+
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return

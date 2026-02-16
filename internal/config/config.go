@@ -3,6 +3,8 @@ package config
 import (
 	"sync"
 	"sync/atomic"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 type PluginConfig struct {
@@ -76,6 +78,19 @@ type Manager struct {
 	config       *Config // The current "write" source of truth
 	atomicConfig atomic.Pointer[Config]
 	Reload       chan struct{}
+	watcher      *fsnotify.Watcher
+	done         chan struct{}
+}
+
+// Close stops the configuration watcher.
+func (m *Manager) Close() error {
+	if m.done != nil {
+		close(m.done)
+	}
+	if m.watcher != nil {
+		return m.watcher.Close()
+	}
+	return nil
 }
 
 // GetConfig returns the current configuration (thread-safe, lock-free).

@@ -39,7 +39,7 @@ git clone https://github.com/haiser1/go-api-gateway.git
 cd go-api-gateway
 
 # Install dependencies
-go mod download
+go mod tidy
 ```
 
 ## Local Development
@@ -63,16 +63,13 @@ make build
 # Run
 make run
 # or: ./bin/api-gateway
-
-# run development mode
-make run-dev
 ```
 
 ### Option 3: Docker Compose
 
 ```bash
 # Start gateway + mock server
-docker-compose up -d go-api-gateway mock-server
+docker-compose up -d api-gateway mock-server
 
 # View logs
 docker-compose logs -f api-gateway
