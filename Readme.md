@@ -137,6 +137,21 @@ docker-compose run k6
 k6 run performance/load-test.js
 ```
 
+
+
+## Roadmap
+
+This project is under active development. Upcoming features include:
+
+- **CORS Support** - Configurable CORS headers for cross-origin requests.
+- **Redis Rate Limiting** - Distributed rate limiting using Redis for cluster environments.
+- **gRPC Support** - Enable gRPC proxying and protocol translation.
+- **WebSockets** - Support for persistent WebSocket connections.
+- **Prometheus Metrics** - Built-in metrics for monitoring gateway performance.
+- **Service Discovery** - Integration with HashiCorp Consul/Etcd for dynamic service registration.
+- **Advanced Load Balancing** - Support for Round Robin, Least Connections, and Weighted strategies.
+- **Request/Response Transformation** - Plugins for modifying headers and body on the fly.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE)
