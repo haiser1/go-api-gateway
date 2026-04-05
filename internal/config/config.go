@@ -7,18 +7,77 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type PluginConfig struct {
-	Name   string                 `yaml:"name" json:"name"`
-	Config map[string]interface{} `yaml:"config" json:"config"`
+// === Server Config ===
+
+type ServerConfig struct {
+	ProxyPort int    `yaml:"proxy_port" json:"proxy_port"`
+	AdminPort int    `yaml:"admin_port" json:"admin_port"`
+	LogLevel  string `yaml:"log_level" json:"log_level"`
 }
 
+func (s *ServerConfig) ApplyDefaults() {
+	if s.ProxyPort == 0 {
+		s.ProxyPort = 8080
+	}
+	if s.AdminPort == 0 {
+		s.AdminPort = 8081
+	}
+	if s.LogLevel == "" {
+		s.LogLevel = "info"
+	}
+}
+
+// === Plugin Config ===
+
+type PluginConfig struct {
+	Name    string                 `yaml:"name" json:"name"`
+	Enabled bool                   `yaml:"enabled" json:"enabled"`
+	Config  map[string]interface{} `yaml:"config" json:"config"`
+}
+
+// === Upstream ===
+
+type HealthCheckConfig struct {
+	Path     string `yaml:"path" json:"path"`
+	Interval string `yaml:"interval" json:"interval"`
+}
+
+type UpstreamTarget struct {
+	Host        string             `yaml:"host" json:"host"`
+	Port        int                `yaml:"port" json:"port"`
+	Weight      int                `yaml:"weight" json:"weight"`
+	HealthCheck *HealthCheckConfig `yaml:"health_check,omitempty" json:"health_check,omitempty"`
+}
+
+type Upstream struct {
+	Id        string           `yaml:"id" json:"id"`
+	Name      string           `yaml:"name" json:"name"`
+	Algorithm string           `yaml:"algorithm" json:"algorithm"`
+	Targets   []UpstreamTarget `yaml:"targets" json:"targets"`
+}
+
+func (u *Upstream) ApplyDefaults() {
+	if u.Algorithm == "" {
+		u.Algorithm = "round-robin"
+	}
+	for i := range u.Targets {
+		if u.Targets[i].Port == 0 {
+			u.Targets[i].Port = 80
+		}
+		if u.Targets[i].Weight == 0 {
+			u.Targets[i].Weight = 100
+		}
+	}
+}
+
+// === Service ===
+
 type Service struct {
-	Id       string         `yaml:"id" json:"id"`
-	Name     string         `yaml:"name" json:"name"`
-	Host     string         `yaml:"host" json:"host"`
-	Port     int            `yaml:"port" json:"port"`
-	Protocol string         `yaml:"protocol" json:"protocol"`
-	Plugins  []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
+	Id         string         `yaml:"id" json:"id"`
+	Name       string         `yaml:"name" json:"name"`
+	UpstreamId string         `yaml:"upstream_id" json:"upstream_id"`
+	Protocol   string         `yaml:"protocol" json:"protocol"`
+	Plugins    []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
 
 	// Timeout settings (in seconds)
 	Timeout        int `yaml:"timeout,omitempty" json:"timeout,omitempty"`                 // Total request timeout (default: 30)
@@ -34,9 +93,6 @@ type Service struct {
 func (s *Service) ApplyDefaults() {
 	if s.Protocol == "" {
 		s.Protocol = "http"
-	}
-	if s.Port == 0 {
-		s.Port = 8080
 	}
 	if s.Plugins == nil {
 		s.Plugins = []PluginConfig{}
@@ -55,18 +111,24 @@ func (s *Service) ApplyDefaults() {
 	}
 }
 
+// === Route ===
+
 type Route struct {
-	Id        string         `yaml:"id" json:"id"`
-	Name      string         `yaml:"name" json:"name"`
-	Methods   []string       `yaml:"methods" json:"methods"`
-	Paths     []string       `yaml:"paths" json:"paths"`
-	ServiceId string         `yaml:"serviceId" json:"serviceId"`
-	Plugins   []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
+	Id          string         `yaml:"id" json:"id"`
+	Name        string         `yaml:"name" json:"name"`
+	Methods     []string       `yaml:"methods" json:"methods"`
+	Paths       []string       `yaml:"paths" json:"paths"`
+	ServiceId   string         `yaml:"service_id" json:"service_id"`
+	StripPrefix bool           `yaml:"strip_prefix,omitempty" json:"strip_prefix,omitempty"`
+	Plugins     []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
 }
 
+// === Top-Level Config ===
+
 type Config struct {
-	LogLevel      string         `yaml:"log_level" json:"log_level"`
+	Server        ServerConfig   `yaml:"server" json:"server"`
 	GlobalPlugins []PluginConfig `yaml:"global_plugins" json:"global_plugins"`
+	Upstreams     []Upstream     `yaml:"upstreams" json:"upstreams"`
 	Services      []Service      `yaml:"services" json:"services"`
 	Routes        []Route        `yaml:"routes" json:"routes"`
 }

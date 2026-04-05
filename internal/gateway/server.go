@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,32 +12,45 @@ import (
 )
 
 type Server struct {
-	httpServer *http.Server
-	cfgManager *config.Manager
-	router     *httprouter.Router
-	proxy      *Proxy
+	proxyServer *http.Server
+	adminServer *http.Server
+	cfgManager  *config.Manager
+	proxy       *Proxy
 }
 
 func NewServer(cfgManager *config.Manager) *Server {
-	router := httprouter.New()
-	proxy := NewProxy(cfgManager.GetConfig())
+	cfg := cfgManager.GetConfig()
 
-	// Management routes (Control Plane)
-	RegisterManagementRoutes(router, cfgManager)
+	// === Proxy Server (Data Plane) ===
+	proxy := NewProxy(cfg)
 
-	// Catch-all route for Proxy (Data Plane)
-	// Router ini menangani request yang tidak match dengan route manajemen
-	router.NotFound = http.HandlerFunc(proxy.ServeHTTP)
-	router.MethodNotAllowed = http.HandlerFunc(proxy.ServeHTTP)
+	proxyPort := cfg.Server.ProxyPort
+	if proxyPort == 0 {
+		proxyPort = 8080
+	}
+
+	// === Management Server (Control Plane) ===
+	adminRouter := httprouter.New()
+	RegisterManagementRoutes(adminRouter, cfgManager)
+
+	adminPort := cfg.Server.AdminPort
+	if adminPort == 0 {
+		adminPort = 8081
+	}
 
 	s := &Server{
 		cfgManager: cfgManager,
-		router:     router,
 		proxy:      proxy,
-		httpServer: &http.Server{
-			Addr:         ":8080",
-			Handler:      router,
-			ReadTimeout:  10 * time.Second, // Best practice: Set timeouts!
+		proxyServer: &http.Server{
+			Addr:         fmt.Sprintf(":%d", proxyPort),
+			Handler:      http.HandlerFunc(proxy.ServeHTTP),
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		},
+		adminServer: &http.Server{
+			Addr:         fmt.Sprintf(":%d", adminPort),
+			Handler:      adminRouter,
+			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		},
 	}
@@ -44,11 +58,33 @@ func NewServer(cfgManager *config.Manager) *Server {
 }
 
 func (s *Server) Start() error {
-	// FIX: Panggil watcher hanya SEKALI
+	// Start config watcher
 	go s.watchConfigChanges()
 
-	log.Info().Msg("Server started on port 8080")
-	return s.httpServer.ListenAndServe()
+	cfg := s.cfgManager.GetConfig()
+	proxyPort := cfg.Server.ProxyPort
+	adminPort := cfg.Server.AdminPort
+
+	errCh := make(chan error, 2)
+
+	// Start Proxy Server
+	go func() {
+		log.Info().Int("port", proxyPort).Msg("Proxy server started")
+		if err := s.proxyServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("proxy server error: %w", err)
+		}
+	}()
+
+	// Start Management Server
+	go func() {
+		log.Info().Int("port", adminPort).Msg("Management server started")
+		if err := s.adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("management server error: %w", err)
+		}
+	}()
+
+	// Block until one of them returns an error
+	return <-errCh
 }
 
 func (s *Server) watchConfigChanges() {
@@ -66,5 +102,20 @@ func (s *Server) reloadRoutes() {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	log.Info().Msg("Shutting down API Gateway...")
-	return s.httpServer.Shutdown(ctx)
+
+	var firstErr error
+
+	if err := s.proxyServer.Shutdown(ctx); err != nil {
+		log.Error().Err(err).Msg("Failed to shutdown proxy server")
+		firstErr = err
+	}
+
+	if err := s.adminServer.Shutdown(ctx); err != nil {
+		log.Error().Err(err).Msg("Failed to shutdown management server")
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
 }

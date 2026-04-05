@@ -1,15 +1,21 @@
 package gateway
 
 import (
+	"context"
 	"net/http"
 	"sync/atomic"
 
 	"github.com/haiser1/go-api-gateway/internal/config"
 )
 
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const pathParamsKey contextKey = "pathParams"
+
 // routeSnapshot holds immutable routing data for atomic swap
 type routeSnapshot struct {
-	routes        []ResolvedRoute
+	tree          *RadixTree
 	globalPlugins []config.PluginConfig
 }
 
@@ -24,10 +30,10 @@ func NewProxy(cfg *config.Config) *Proxy {
 }
 
 func (p *Proxy) UpdateRoutes(cfg *config.Config) {
-	newRoutes, newGlobalPlugins := p.buildRoutingTable(cfg)
+	newTree, newGlobalPlugins := p.buildRoutingTable(cfg)
 
 	snap := &routeSnapshot{
-		routes:        newRoutes,
+		tree:          newTree,
 		globalPlugins: newGlobalPlugins,
 	}
 	p.snapshot.Store(snap)
@@ -41,61 +47,30 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var matchedRoute *ResolvedRoute
-
-	// Iterasi Slice yang sudah terurut (Priority Routing)
-	for i := range snap.routes {
-		rr := &snap.routes[i]
-
-		// 1. Cek Method
-		if rr.Method != r.Method {
-			continue
-		}
-
-		// 2. Cek Path
-		if rr.IsRegex {
-			if rr.Regex.MatchString(r.URL.Path) {
-				matchedRoute = rr
-				break // Ketemu! Stop looping.
-			}
-		} else {
-			if rr.PathPattern == r.URL.Path {
-				matchedRoute = rr
-				break // Ketemu! Stop looping.
-			}
-		}
-	}
+	// Radix Tree Lookup — O(k) where k = number of path segments
+	matchedRoute, params := snap.tree.Search(r.Method, r.URL.Path)
 
 	if matchedRoute == nil {
 		http.Error(w, `{"error": "Not Found"}`, http.StatusNotFound)
 		return
 	}
 
-	// Siapkan Handler Akhir: Eksekusi Proxy yang sudah di-cache
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Update header agar upstream tahu host aslinya
-		r.Header.Set("X-Forwarded-Host", r.Header.Get("Host"))
-		r.URL.Host = matchedRoute.TargetURL.Host
-		r.URL.Scheme = matchedRoute.TargetURL.Scheme
-
-		// Panggil proxy object yang sudah ready (Super Cepat)
-		matchedRoute.ProxyHandler.ServeHTTP(w, r)
-	})
-
-	// Eksekusi Middleware Chain
-	handler := finalHandler
-	for i := len(matchedRoute.Plugins) - 1; i >= 0; i-- {
-		pluginCfg := matchedRoute.Plugins[i]
-		if builder, ok := pluginRegistry[pluginCfg.Name]; ok {
-			plugin := builder(pluginCfg.Config)
-			next := handler
-			handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if !plugin.Execute(w, r, next) {
-					return // Middleware memutus rantai (misal: Auth gagal)
-				}
-			})
-		}
+	// Store path params in context for downstream use
+	if len(params) > 0 {
+		ctx := context.WithValue(r.Context(), pathParamsKey, params)
+		r = r.WithContext(ctx)
 	}
 
-	handler.ServeHTTP(w, r)
+	// Execute pre-compiled middleware chain (built at config load time)
+	matchedRoute.CompiledHandler.ServeHTTP(w, r)
+}
+
+// GetPathParams extracts path parameters from request context.
+// Usage: params := gateway.GetPathParams(r)
+// Then: userId := params["id"]
+func GetPathParams(r *http.Request) map[string]string {
+	if params, ok := r.Context().Value(pathParamsKey).(map[string]string); ok {
+		return params
+	}
+	return nil
 }

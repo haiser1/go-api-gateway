@@ -37,6 +37,10 @@ func (m *Manager) AddService(s Service) error {
 	if m.serviceNameExistsLocked(s.Name, "") {
 		return fmt.Errorf("service dengan nama '%s' sudah ada", s.Name)
 	}
+	if s.UpstreamId != "" && !m.upstreamExistsLocked(s.UpstreamId) {
+		return fmt.Errorf("upstream dengan ID '%s' tidak ditemukan", s.UpstreamId)
+	}
+	s.ApplyDefaults()
 	m.config.Services = append(m.config.Services, s)
 
 	err := m.saveAndReloadLocked()
@@ -53,9 +57,13 @@ func (m *Manager) UpdateService(serviceId string, updatedService Service) error 
 	if m.serviceNameExistsLocked(updatedService.Name, serviceId) {
 		return fmt.Errorf("nama service '%s' sudah digunakan", updatedService.Name)
 	}
+	if updatedService.UpstreamId != "" && !m.upstreamExistsLocked(updatedService.UpstreamId) {
+		return fmt.Errorf("upstream dengan ID '%s' tidak ditemukan", updatedService.UpstreamId)
+	}
 	found := false
 	for i := range m.config.Services {
 		if m.config.Services[i].Id == serviceId {
+			updatedService.ApplyDefaults()
 			m.config.Services[i] = updatedService
 			found = true
 			break

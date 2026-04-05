@@ -25,20 +25,13 @@ func main() {
 
 	// --- Configure Logging ---
 	cfg := cfgManager.GetConfig()
-	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
+	logLevel, err := zerolog.ParseLevel(cfg.Server.LogLevel)
 	if err != nil {
 		logLevel = zerolog.InfoLevel // Default
 	}
 	zerolog.SetGlobalLevel(logLevel)
 
-	// Optional: Pretty logging for development if running in terminal?
-	// But let's stick to standard/JSON by default properly.
-	// User asked "zerolog", usually implies structured logs.
-	// But let's check if we want human readable for dev convenience or just JSON.
-	// Standard practice: if no TTY, JSON. If TTY, Console.
-	// For simplicity and user request "use zerolog", I'll just init global logger.
-	// Let's use standard out.
-	log.Logger = log.Output(os.Stderr) // Default zerolog writes to stderr usually or stdout? Default is stderr.
+	log.Logger = log.Output(os.Stderr)
 
 	log.Info().Str("level", logLevel.String()).Msg("Logger initialized")
 

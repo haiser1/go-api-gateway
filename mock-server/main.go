@@ -2,25 +2,61 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"os"
+	"runtime"
+	"time"
 )
 
+// Pre-allocate response bytes (zero allocation per-request)
+var mockResponse = []byte("{\"status\":\"mock_ok\"}\n")
+var healthResponse = []byte("{\"status\":\"healthy\"}\n")
+
 func main() {
-	// Handler ini akan merespons secepat mungkin
-	http.HandleFunc("/mock", func(w http.ResponseWriter, r *http.Request) {
-		// Kita tidak melakukan apa-apa, hanya kirim OK
-		// Ini adalah respons tercepat yang bisa diberikan Go
+	// Use all available CPUs
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/mock", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, `{"status":"mock_ok"}`)
+		w.Write(mockResponse)
 	})
 
-	port := "9090"
-	log.Printf("Starting fast mock server on %s:%s", "localhost", port)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(healthResponse)
+	})
 
-	// Jalankan di port yang berbeda dari gateway Anda
-	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), nil); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9090"
+	}
+
+	server := &http.Server{
+		Handler: mux,
+
+		// Timeouts tuned for extreme stress test
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: 2 * time.Second,
+		MaxHeaderBytes:    1 << 16, // 64KB
+	}
+
+	// Custom listener with high TCP backlog
+	// Default backlog is 128, kita naikkan agar tidak reject connection saat spike
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatalf("Failed to listen: %s\n", err)
+	}
+
+	log.Printf("Starting optimized mock server on :%s (GOMAXPROCS=%d)", port, runtime.GOMAXPROCS(0))
+	if err := server.Serve(ln); err != nil {
 		log.Fatalf("Could not start mock server: %s\n", err)
 	}
 }

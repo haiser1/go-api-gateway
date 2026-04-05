@@ -9,17 +9,23 @@ services:
     container_name: go-api-gateway
     ports:
       - "8080:8080"
+      - "8081:8081"
     environment:
-      # Asumsi: App Anda bisa override config via ENV (Opsional)
       - APP_ENV=production
+      - GOMAXPROCS=2
     volumes:
-      # Mount config agar bisa diubah tanpa rebuild image
       - ./configs:/configs
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     deploy:
       resources:
         limits:
-          cpus: '1' # Batasi 0.5 core
-          memory: 1G # Batasi 256MB RAM
+          cpus: '0.5'
+          memory: '512M'
+
+    restart: on-failure
 
   # -------------------------------------------------------
   # 2. Mock Server (Upstream Service)
@@ -31,14 +37,20 @@ services:
     container_name: mock-server
     ports:
       - "9090:9090"
+    environment:
+      - GOMAXPROCS=4
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     deploy:
       resources:
         limits:
-          cpus: '1' # Mock sangat ringan
-          memory: 1G
+          cpus: '4'
+          memory: 2G
 
   # -------------------------------------------------------
-  # 3. K6 Load Tester
+  # 3. K6 Load Tester (Over-resourced agar bukan bottleneck)
   # -------------------------------------------------------
   k6:
     image: grafana/k6:latest
@@ -49,4 +61,13 @@ services:
       - TARGET_URL=http://api-gateway:8080
     volumes:
       - ./performance:/scripts
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
     command: run /scripts/load-test.js

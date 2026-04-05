@@ -8,25 +8,30 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Circuit breaker states
+// Circuit breaker states follow the standard closed → open → half-open pattern.
 const (
-	StateClosed   = iota // Normal operation
-	StateOpen            // Blocking requests
-	StateHalfOpen        // Testing with single request
+	StateClosed   int32 = iota // Normal: all requests pass through
+	StateOpen                  // Tripped: all requests are rejected
+	StateHalfOpen              // Recovery: one probe request is allowed through
 )
 
-// Circuit breaker configuration
+// Circuit breaker thresholds.
+// These are compile-time constants; consider making them configurable
+// per-service if different upstreams have different reliability profiles.
 const (
-	failureThreshold = 5                // Open after 5 consecutive failures
-	breakerTimeout   = 30 * time.Second // Time before trying half-open
+	failureThreshold = 5                // consecutive failures before tripping to Open
+	breakerTimeout   = 30 * time.Second // cooldown before transitioning Open → HalfOpen
 )
 
+// CircuitBreaker implements a thread-safe state machine that protects upstream
+// services from cascading failures. It uses a combination of atomic reads
+// (for the lock-free hot path) and mutex-guarded writes (for state transitions).
 type CircuitBreaker struct {
 	mu              sync.Mutex
-	state           int
-	failureCount    int
-	lastFailureTime time.Time
-	halfOpenProbe   atomic.Bool // Prevents thundering herd in half-open
+	state           int32       // read via atomic.LoadInt32 (lock-free), written under mu
+	failureCount    int         // consecutive failures since last success/reset
+	lastFailureTime time.Time   // timestamp of last failure; drives Open → HalfOpen transition
+	halfOpenProbe   atomic.Bool // CAS flag: ensures only one probe request in HalfOpen state
 }
 
 // NewCircuitBreaker creates a new circuit breaker in closed state
@@ -36,17 +41,25 @@ func NewCircuitBreaker() *CircuitBreaker {
 
 // AllowRequest checks if a request should be allowed through
 func (cb *CircuitBreaker) AllowRequest() bool {
+	// Fast path: lock-free check for closed state (hot path optimization)
+	// In normal operation (99%+ of calls), this avoids mutex contention entirely
+	if atomic.LoadInt32(&cb.state) == StateClosed {
+		return true
+	}
+
+	// Slow path: only entered when circuit is Open or HalfOpen
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	switch cb.state {
+	switch atomic.LoadInt32(&cb.state) {
 	case StateClosed:
+		// Re-check after acquiring lock (might have changed)
 		return true
 
 	case StateOpen:
 		// Check if timeout has passed
 		if time.Since(cb.lastFailureTime) > breakerTimeout {
-			cb.state = StateHalfOpen
+			atomic.StoreInt32(&cb.state, StateHalfOpen)
 			log.Info().Msg("Circuit Breaker: Transitioned to HALF-OPEN state")
 			// Fall through to half-open logic
 		} else {
@@ -68,34 +81,40 @@ func (cb *CircuitBreaker) AllowRequest() bool {
 	return false
 }
 
-// RecordSuccess records a successful request
+// RecordSuccess records a successful request.
+// On the hot path (Closed state), this is a no-op — failure count is already
+// reset during every state transition to Closed, so no lock is needed.
 func (cb *CircuitBreaker) RecordSuccess() {
+	// Fast path: nothing to do if closed (99%+ of calls hit this)
+	if atomic.LoadInt32(&cb.state) == StateClosed {
+		return
+	}
+
+	// Slow path: handle HalfOpen → Closed transition
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	switch cb.state {
-	case StateHalfOpen:
-		// Probe succeeded, close the circuit
-		cb.state = StateClosed
+	if atomic.LoadInt32(&cb.state) == StateHalfOpen {
+		// Probe succeeded — close the circuit and allow all traffic
+		atomic.StoreInt32(&cb.state, StateClosed)
 		cb.failureCount = 0
 		cb.halfOpenProbe.Store(false)
 		log.Info().Msg("Circuit Breaker: CLOSED - Service recovered")
-	case StateClosed:
-		// Reset failure count on success
-		cb.failureCount = 0
 	}
 }
 
-// RecordFailure records a failed request
+// RecordFailure records a failed request and potentially trips the circuit.
+// In HalfOpen state, any failure immediately reopens the circuit.
+// In Closed state, failures are counted and the circuit opens after failureThreshold consecutive failures.
 func (cb *CircuitBreaker) RecordFailure() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
 	cb.lastFailureTime = time.Now()
 
-	if cb.state == StateHalfOpen {
-		// Probe failed, back to open
-		cb.state = StateOpen
+	if atomic.LoadInt32(&cb.state) == StateHalfOpen {
+		// Probe failed — reopen the circuit and reset the probe flag
+		atomic.StoreInt32(&cb.state, StateOpen)
 		cb.halfOpenProbe.Store(false)
 		log.Warn().Msg("Circuit Breaker: OPEN - Probe request failed")
 		return
@@ -103,16 +122,14 @@ func (cb *CircuitBreaker) RecordFailure() {
 
 	cb.failureCount++
 	if cb.failureCount >= failureThreshold {
-		cb.state = StateOpen
+		atomic.StoreInt32(&cb.state, StateOpen)
 		log.Warn().Int("failures", cb.failureCount).Msg("Circuit Breaker: OPEN - Failure threshold reached")
 	}
 }
 
-// GetState returns current state for monitoring
+// GetState returns the current state as a human-readable string for monitoring/logging.
 func (cb *CircuitBreaker) GetState() string {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	switch cb.state {
+	switch atomic.LoadInt32(&cb.state) {
 	case StateClosed:
 		return "CLOSED"
 	case StateOpen:

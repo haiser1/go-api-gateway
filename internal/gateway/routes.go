@@ -12,7 +12,14 @@ func RegisterManagementRoutes(router *httprouter.Router, manager *config.Manager
 		Manager: manager,
 	}
 
-	// === Global Plugin Routes === (BARU)
+	// === Upstream Routes ===
+	router.GET("/api/upstreams", h.GetUpstreams)
+	router.POST("/api/upstreams", h.AddUpstream)
+	router.GET("/api/upstreams/:upstreamId", h.GetUpstreamById)
+	router.PUT("/api/upstreams/:upstreamId", h.UpdateUpstream)
+	router.DELETE("/api/upstreams/:upstreamId", h.DeleteUpstream)
+
+	// === Global Plugin Routes ===
 	router.GET("/api/global-plugins", h.GetGlobalPlugins)
 	router.POST("/api/global-plugins", h.AddGlobalPlugin)
 	router.PUT("/api/global-plugins/:pluginName", h.UpdateGlobalPlugin)
@@ -33,13 +40,13 @@ func RegisterManagementRoutes(router *httprouter.Router, manager *config.Manager
 	router.DELETE("/api/routes/:routeId", h.DeleteRoute)
 
 	// === Service Plugin Routes ===
-	router.GET("/api/services/:serviceId/plugins", h.GetServicePlugins) // DITAMBAHKAN
+	router.GET("/api/services/:serviceId/plugins", h.GetServicePlugins)
 	router.POST("/api/services/:serviceId/plugins", h.AddPluginToService)
 	router.PUT("/api/services/:serviceId/plugins/:pluginName", h.UpdatePluginInService)
 	router.DELETE("/api/services/:serviceId/plugins/:pluginName", h.DeletePluginFromService)
 
 	// === Route Plugin Routes ===
-	router.GET("/api/routes/:routeId/plugins", h.GetRoutePlugins) // DITAMBAHKAN
+	router.GET("/api/routes/:routeId/plugins", h.GetRoutePlugins)
 	router.POST("/api/routes/:routeId/plugins", h.AddPluginToRoute)
 	router.PUT("/api/routes/:routeId/plugins/:pluginName", h.UpdatePluginInRoute)
 	router.DELETE("/api/routes/:routeId/plugins/:pluginName", h.DeletePluginFromRoute)

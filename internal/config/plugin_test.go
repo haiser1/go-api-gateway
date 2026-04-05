@@ -16,9 +16,12 @@ func setupTestManager(t *testing.T) (*Manager, string) {
 	m := &Manager{
 		configPath: configPath,
 		config: &Config{
-			LogLevel: "info",
+			Server: ServerConfig{LogLevel: "info"},
+			Upstreams: []Upstream{
+				{Id: "u1", Name: "upstream1", Algorithm: "round-robin", Targets: []UpstreamTarget{{Host: "localhost", Port: 9090}}},
+			},
 			Services: []Service{
-				{Id: "s1", Name: "service1"},
+				{Id: "s1", Name: "service1", UpstreamId: "u1"},
 			},
 			Routes: []Route{
 				{Id: "r1", Name: "route1", ServiceId: "s1"},

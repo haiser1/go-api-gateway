@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/haiser1/go-api-gateway/internal/config"
 	"github.com/haiser1/go-api-gateway/internal/domain"
-	"github.com/haiser1/go-api-gateway/internal/helper" // Pastikan path ini sesuai
+	"github.com/haiser1/go-api-gateway/internal/helper"
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -18,17 +18,42 @@ type ManagementHandler struct {
 
 // --- HELPER UNTUK KONVERSI DTO ---
 
+func dtoToConfigUpstream(dto domain.AddUpstreamRequest) config.Upstream {
+	targets := make([]config.UpstreamTarget, len(dto.Targets))
+	for i, t := range dto.Targets {
+		targets[i] = config.UpstreamTarget{
+			Host:   t.Host,
+			Port:   t.Port,
+			Weight: t.Weight,
+		}
+		if t.HealthCheck != nil {
+			targets[i].HealthCheck = &config.HealthCheckConfig{
+				Path:     t.HealthCheck.Path,
+				Interval: t.HealthCheck.Interval,
+			}
+		}
+	}
+
+	u := config.Upstream{
+		Id:        uuid.NewString(),
+		Name:      dto.Name,
+		Algorithm: dto.Algorithm,
+		Targets:   targets,
+	}
+	u.ApplyDefaults()
+	return u
+}
+
 func dtoToConfigService(dto domain.AddServiceRequest) config.Service {
 	plugins := make([]config.PluginConfig, len(dto.Plugins))
 	for i, p := range dto.Plugins {
-		plugins[i] = config.PluginConfig{Name: p.Name, Config: p.Config}
+		plugins[i] = config.PluginConfig{Name: p.Name, Enabled: p.Enabled, Config: p.Config}
 	}
 
 	svc := config.Service{
 		Id:             uuid.NewString(),
 		Name:           dto.Name,
-		Host:           dto.Host,
-		Port:           dto.Port,
+		UpstreamId:     dto.UpstreamId,
 		Protocol:       dto.Protocol,
 		Plugins:        plugins,
 		Timeout:        dto.Timeout,
@@ -44,23 +69,130 @@ func dtoToConfigService(dto domain.AddServiceRequest) config.Service {
 func dtoToConfigRoute(dto domain.AddRouteRequest) config.Route {
 	plugins := make([]config.PluginConfig, len(dto.Plugins))
 	for i, p := range dto.Plugins {
-		plugins[i] = config.PluginConfig{Name: p.Name, Config: p.Config}
+		plugins[i] = config.PluginConfig{Name: p.Name, Enabled: p.Enabled, Config: p.Config}
 	}
 	return config.Route{
-		Id:        uuid.NewString(),
-		Name:      dto.Name,
-		Methods:   dto.Methods,
-		Paths:     dto.Paths,
-		ServiceId: dto.ServiceId,
-		Plugins:   plugins,
+		Id:          uuid.NewString(),
+		Name:        dto.Name,
+		Methods:     dto.Methods,
+		Paths:       dto.Paths,
+		ServiceId:   dto.ServiceId,
+		StripPrefix: dto.StripPrefix,
+		Plugins:     plugins,
 	}
 }
 
 func dtoToConfigPlugin(dto domain.Plugin) config.PluginConfig {
 	return config.PluginConfig{
-		Name:   dto.Name,
-		Config: dto.Config,
+		Name:    dto.Name,
+		Enabled: dto.Enabled,
+		Config:  dto.Config,
 	}
+}
+
+// --- UPSTREAM HANDLERS ---
+
+func (h *ManagementHandler) GetUpstreams(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	cfg := h.Manager.GetConfig()
+	helper.RespondSuccess(w, http.StatusOK, "Upstreams fetched successfully", cfg.Upstreams)
+}
+
+func (h *ManagementHandler) GetUpstreamById(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	upstreamId := ps.ByName("upstreamId")
+	cfg := h.Manager.GetConfig()
+
+	for _, u := range cfg.Upstreams {
+		if u.Id == upstreamId {
+			// Convert to response DTO
+			targets := make([]domain.UpstreamTargetDTO, len(u.Targets))
+			for i, t := range u.Targets {
+				targets[i] = domain.UpstreamTargetDTO{
+					Host:   t.Host,
+					Port:   t.Port,
+					Weight: t.Weight,
+				}
+				if t.HealthCheck != nil {
+					targets[i].HealthCheck = &domain.HealthCheckDTO{
+						Path:     t.HealthCheck.Path,
+						Interval: t.HealthCheck.Interval,
+					}
+				}
+			}
+			response := domain.UpstreamDetailResponse{
+				Id:        u.Id,
+				Name:      u.Name,
+				Algorithm: u.Algorithm,
+				Targets:   targets,
+			}
+			helper.RespondSuccess(w, http.StatusOK, "Upstream fetched successfully", response)
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Upstream not found", nil)
+}
+
+func (h *ManagementHandler) AddUpstream(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var req domain.AddUpstreamRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if req.Name == "" || len(req.Targets) == 0 {
+		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, targets", nil)
+		return
+	}
+	newUpstream := dtoToConfigUpstream(req)
+	if err := h.Manager.AddUpstream(newUpstream); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add upstream", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "Upstream added successfully", newUpstream)
+}
+
+func (h *ManagementHandler) UpdateUpstream(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	upstreamId := ps.ByName("upstreamId")
+	var req domain.UpdateUpstreamRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+
+	targets := make([]config.UpstreamTarget, len(req.Targets))
+	for i, t := range req.Targets {
+		targets[i] = config.UpstreamTarget{
+			Host:   t.Host,
+			Port:   t.Port,
+			Weight: t.Weight,
+		}
+		if t.HealthCheck != nil {
+			targets[i].HealthCheck = &config.HealthCheckConfig{
+				Path:     t.HealthCheck.Path,
+				Interval: t.HealthCheck.Interval,
+			}
+		}
+	}
+
+	updatedUpstream := config.Upstream{
+		Id:        upstreamId,
+		Name:      req.Name,
+		Algorithm: req.Algorithm,
+		Targets:   targets,
+	}
+
+	if err := h.Manager.UpdateUpstream(upstreamId, updatedUpstream); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update upstream", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Upstream updated successfully", updatedUpstream)
+}
+
+func (h *ManagementHandler) DeleteUpstream(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	upstreamId := ps.ByName("upstreamId")
+	if err := h.Manager.DeleteUpstream(upstreamId); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete upstream", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "Upstream deleted successfully", nil)
 }
 
 // --- GLOBAL PLUGIN HANDLERS ---
@@ -147,7 +279,7 @@ func (h *ManagementHandler) GetServiceById(w http.ResponseWriter, r *http.Reques
 		if route.ServiceId == targetService.Id {
 			routePlugins := make([]domain.Plugin, len(route.Plugins))
 			for i, p := range route.Plugins {
-				routePlugins[i] = domain.Plugin{Name: p.Name, Config: p.Config}
+				routePlugins[i] = domain.Plugin{Name: p.Name, Enabled: p.Enabled, Config: p.Config}
 			}
 			routeDetail := domain.RouteDetail{
 				Id:      route.Id,
@@ -162,15 +294,14 @@ func (h *ManagementHandler) GetServiceById(w http.ResponseWriter, r *http.Reques
 
 	servicePlugins := make([]domain.Plugin, len(targetService.Plugins))
 	for i, p := range targetService.Plugins {
-		servicePlugins[i] = domain.Plugin{Name: p.Name, Config: p.Config}
+		servicePlugins[i] = domain.Plugin{Name: p.Name, Enabled: p.Enabled, Config: p.Config}
 	}
 
 	response := domain.ServiceDetailResponse{
 		Id:             targetService.Id,
 		Name:           targetService.Name,
+		UpstreamId:     targetService.UpstreamId,
 		Protocol:       targetService.Protocol,
-		Host:           targetService.Host,
-		Port:           targetService.Port,
 		Plugins:        servicePlugins,
 		Routes:         matchingRoutes,
 		Timeout:        targetService.Timeout,
@@ -189,8 +320,8 @@ func (h *ManagementHandler) AddService(w http.ResponseWriter, r *http.Request, _
 		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
 		return
 	}
-	if req.Name == "" || req.Host == "" {
-		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, host", nil)
+	if req.Name == "" || req.UpstreamId == "" {
+		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, upstream_id", nil)
 		return
 	}
 	newService := dtoToConfigService(req)
@@ -211,14 +342,13 @@ func (h *ManagementHandler) UpdateService(w http.ResponseWriter, r *http.Request
 
 	plugins := make([]config.PluginConfig, len(req.Plugins))
 	for i, p := range req.Plugins {
-		plugins[i] = config.PluginConfig{Name: p.Name, Config: p.Config}
+		plugins[i] = config.PluginConfig{Name: p.Name, Enabled: p.Enabled, Config: p.Config}
 	}
 
 	updatedService := config.Service{
 		Id:             serviceId,
 		Name:           req.Name,
-		Host:           req.Host,
-		Port:           req.Port,
+		UpstreamId:     req.UpstreamId,
 		Protocol:       req.Protocol,
 		Plugins:        plugins,
 		Timeout:        req.Timeout,
@@ -227,7 +357,6 @@ func (h *ManagementHandler) UpdateService(w http.ResponseWriter, r *http.Request
 		Retries:        req.Retries,
 		RetryBackoff:   req.RetryBackoff,
 	}
-	updatedService.ApplyDefaults()
 
 	if err := h.Manager.UpdateService(serviceId, updatedService); err != nil {
 		helper.RespondError(w, http.StatusNotFound, "Failed to update service", err)
@@ -283,7 +412,7 @@ func (h *ManagementHandler) GetRouteById(w http.ResponseWriter, r *http.Request,
 
 	routePlugins := make([]domain.Plugin, len(targetRoute.Plugins))
 	for i, p := range targetRoute.Plugins {
-		routePlugins[i] = domain.Plugin{Name: p.Name, Config: p.Config}
+		routePlugins[i] = domain.Plugin{Name: p.Name, Enabled: p.Enabled, Config: p.Config}
 	}
 
 	response := domain.RouteDetailResponse{
@@ -329,16 +458,17 @@ func (h *ManagementHandler) UpdateRoute(w http.ResponseWriter, r *http.Request, 
 
 	plugins := make([]config.PluginConfig, len(req.Plugins))
 	for i, p := range req.Plugins {
-		plugins[i] = config.PluginConfig{Name: p.Name, Config: p.Config}
+		plugins[i] = config.PluginConfig{Name: p.Name, Enabled: p.Enabled, Config: p.Config}
 	}
 
 	updatedRoute := config.Route{
-		Id:        routeId,
-		Name:      req.Name,
-		Methods:   req.Methods,
-		Paths:     req.Paths,
-		ServiceId: req.ServiceId,
-		Plugins:   plugins,
+		Id:          routeId,
+		Name:        req.Name,
+		Methods:     req.Methods,
+		Paths:       req.Paths,
+		ServiceId:   req.ServiceId,
+		StripPrefix: req.StripPrefix,
+		Plugins:     plugins,
 	}
 
 	if err := h.Manager.UpdateRoute(routeId, updatedRoute); err != nil {
