@@ -116,7 +116,10 @@ func (p *Proxy) buildRoutingTable(cfg *config.Config) (*RadixTree, []config.Plug
 				// Pre-compile middleware chain (zero allocation per-request)
 				rr.CompiledHandler = buildMiddlewareChain(&rr)
 
-				tree.Insert(method, path, &rr)
+				if err := tree.Insert(method, path, &rr); err != nil {
+					log.Warn().Err(err).Str("route", route.Name).Str("method", method).Str("path", path).Msg("Skipping duplicate route")
+					continue
+				}
 				log.Debug().Str("method", method).Str("path", path).Str("target", targetURLStr).Msg("Route inserted into radix tree")
 			}
 		}

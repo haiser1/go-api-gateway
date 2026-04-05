@@ -293,3 +293,164 @@ func BenchmarkRadixTree_Search_ManyRoutes(b *testing.B) {
 		tree.Search("GET", "/api/v1/notifications/abc123")
 	}
 }
+
+func BenchmarkRadixTree_Search_Wildcard(b *testing.B) {
+	tree := NewRadixTree()
+	tree.Insert("GET", "/static/*filepath", makeRoute("GET", "/static/*filepath"))
+	tree.Insert("GET", "/api/users/:id", makeRoute("GET", "/api/users/:id"))
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tree.Search("GET", "/static/css/main.css")
+	}
+}
+
+// === Wildcard Tests ===
+
+func TestRadixTree_WildcardCatchAll(t *testing.T) {
+	tree := NewRadixTree()
+
+	tree.Insert("GET", "/static/*filepath", makeRoute("GET", "/static/*filepath"))
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantMatch  bool
+		wantPath   string
+		wantParams map[string]string
+	}{
+		{
+			"single file",
+			"GET", "/static/main.css", true, "/static/*filepath",
+			map[string]string{"filepath": "main.css"},
+		},
+		{
+			"nested path",
+			"GET", "/static/css/main.css", true, "/static/*filepath",
+			map[string]string{"filepath": "css/main.css"},
+		},
+		{
+			"deeply nested",
+			"GET", "/static/assets/images/logo.png", true, "/static/*filepath",
+			map[string]string{"filepath": "assets/images/logo.png"},
+		},
+		{
+			"wrong method",
+			"POST", "/static/main.css", false, "", nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			route, params := tree.Search(tt.method, tt.path)
+			if tt.wantMatch {
+				if route == nil {
+					t.Fatalf("expected match for %s %s, got nil", tt.method, tt.path)
+				}
+				if route.PathPattern != tt.wantPath {
+					t.Errorf("expected PathPattern=%q, got %q", tt.wantPath, route.PathPattern)
+				}
+				for k, v := range tt.wantParams {
+					if params[k] != v {
+						t.Errorf("expected param %s=%q, got %q", k, v, params[k])
+					}
+				}
+			} else {
+				if route != nil {
+					t.Fatalf("expected no match for %s %s, got %+v", tt.method, tt.path, route)
+				}
+			}
+		})
+	}
+}
+
+func TestRadixTree_StaticPriorityOverWildcard(t *testing.T) {
+	tree := NewRadixTree()
+
+	tree.Insert("GET", "/static/*filepath", makeRoute("GET", "/static/*filepath"))
+	tree.Insert("GET", "/static/favicon.ico", makeRoute("GET", "/static/favicon.ico"))
+
+	// Static route should take priority
+	route, params := tree.Search("GET", "/static/favicon.ico")
+	if route == nil {
+		t.Fatal("expected match")
+	}
+	if route.PathPattern != "/static/favicon.ico" {
+		t.Errorf("expected static route, got %s", route.PathPattern)
+	}
+	if len(params) > 0 {
+		t.Errorf("expected no params for static match, got %v", params)
+	}
+
+	// Other paths should hit the wildcard
+	route, params = tree.Search("GET", "/static/other.js")
+	if route == nil {
+		t.Fatal("expected match")
+	}
+	if route.PathPattern != "/static/*filepath" {
+		t.Errorf("expected wildcard route, got %s", route.PathPattern)
+	}
+	if params["filepath"] != "other.js" {
+		t.Errorf("expected filepath=other.js, got %s", params["filepath"])
+	}
+}
+
+func TestRadixTree_ParamAndWildcard(t *testing.T) {
+	tree := NewRadixTree()
+
+	tree.Insert("GET", "/api/users/:id", makeRoute("GET", "/api/users/:id"))
+	tree.Insert("GET", "/files/*path", makeRoute("GET", "/files/*path"))
+
+	// Param route
+	route, params := tree.Search("GET", "/api/users/42")
+	if route == nil {
+		t.Fatal("expected match")
+	}
+	if route.PathPattern != "/api/users/:id" {
+		t.Errorf("expected param route, got %s", route.PathPattern)
+	}
+	if params["id"] != "42" {
+		t.Errorf("expected id=42, got %s", params["id"])
+	}
+
+	// Wildcard route
+	route, params = tree.Search("GET", "/files/docs/readme.md")
+	if route == nil {
+		t.Fatal("expected match")
+	}
+	if route.PathPattern != "/files/*path" {
+		t.Errorf("expected wildcard route, got %s", route.PathPattern)
+	}
+	if params["path"] != "docs/readme.md" {
+		t.Errorf("expected path=docs/readme.md, got %s", params["path"])
+	}
+}
+
+func TestRadixTree_DuplicateRouteRejection(t *testing.T) {
+	tree := NewRadixTree()
+
+	// First insert should succeed
+	err := tree.Insert("GET", "/api/users", makeRoute("GET", "/api/users"))
+	if err != nil {
+		t.Fatalf("first insert should succeed, got: %v", err)
+	}
+
+	// Duplicate method+path should be rejected
+	err = tree.Insert("GET", "/api/users", makeRoute("GET", "/api/users"))
+	if err == nil {
+		t.Fatal("expected error for duplicate GET /api/users")
+	}
+
+	// Different method on same path should succeed
+	err = tree.Insert("POST", "/api/users", makeRoute("POST", "/api/users"))
+	if err != nil {
+		t.Fatalf("POST on same path should succeed, got: %v", err)
+	}
+
+	// Different path with same method should succeed
+	err = tree.Insert("GET", "/api/products", makeRoute("GET", "/api/products"))
+	if err != nil {
+		t.Fatalf("GET on different path should succeed, got: %v", err)
+	}
+}

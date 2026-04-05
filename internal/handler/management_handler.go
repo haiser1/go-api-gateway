@@ -432,8 +432,8 @@ func (h *ManagementHandler) AddRoute(w http.ResponseWriter, r *http.Request, _ h
 		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
 		return
 	}
-	if req.Name == "" || len(req.Paths) == 0 || req.ServiceId == "" {
-		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, paths, serviceId", nil)
+	if req.Name == "" || len(req.Paths) == 0 || len(req.Methods) == 0 || req.ServiceId == "" {
+		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, methods, paths, serviceId", nil)
 		return
 	}
 	newRoute := dtoToConfigRoute(req)
@@ -451,8 +451,8 @@ func (h *ManagementHandler) UpdateRoute(w http.ResponseWriter, r *http.Request, 
 		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
 		return
 	}
-	if req.Name == "" || len(req.Paths) == 0 || req.ServiceId == "" {
-		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, paths, serviceId", nil)
+	if req.Name == "" || len(req.Paths) == 0 || len(req.Methods) == 0 || req.ServiceId == "" {
+		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, methods, paths, serviceId", nil)
 		return
 	}
 
