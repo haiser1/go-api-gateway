@@ -161,31 +161,24 @@ func (m *Manager) WriteConfigSafe() error {
 	return m.backupAndWriteFileLocked(data)
 }
 
-// saveAndReloadLocked saves changes to file and updates atomic config.
+// commitConfigLocked persists the new config and atomically publishes it.
+// The old m.config pointer stays valid for any in-flight readers until GC.
 // Callers must ALREADY HOLD m.mu.
-func (m *Manager) saveAndReloadLocked() error {
-	// 1. Marshal current config
-	data, err := yaml.Marshal(m.config)
+func (m *Manager) commitConfigLocked(newCfg *Config) error {
+	data, err := yaml.Marshal(newCfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// 2. Backup & Write (DRY: Pakai helper)
 	if err := m.backupAndWriteFileLocked(data); err != nil {
 		return err
 	}
 
-	// 3. Create fresh copy specifically for atomic (decodes from bytes to ensure clean state)
-	var newCfg Config
-	if err := yaml.Unmarshal(data, &newCfg); err != nil {
-		return fmt.Errorf("failed to unmarshal just-saved config: %w", err)
-	}
+	// Atomic publish — old *Config remains valid for existing readers
+	m.config = newCfg
+	m.atomicConfig.Store(newCfg)
 
-	// 4. Update memory pointers
-	m.atomicConfig.Store(&newCfg) // Untuk Proxy (Lock-free)
-	m.config = &newCfg            // Untuk CRUD selanjutnya
-
-	// 5. Notify
+	// Notify proxy
 	select {
 	case m.Reload <- struct{}{}:
 	default:
@@ -193,3 +186,9 @@ func (m *Manager) saveAndReloadLocked() error {
 
 	return nil
 }
+
+// saveAndReloadLocked persists current m.config. Callers must ALREADY HOLD m.mu.
+func (m *Manager) saveAndReloadLocked() error {
+	return m.commitConfigLocked(m.config)
+}
+
