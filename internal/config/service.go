@@ -9,19 +9,19 @@ import (
 // --- Helper internal (locked) ---
 
 func (m *Manager) serviceExistsLocked(serviceId string) bool {
-	for i := range m.config.Services {
-		if m.config.Services[i].Id == serviceId {
-			return true
-		}
+	if m.serviceIdx == nil {
+		m.rebuildIndexesLocked()
 	}
-	return false
+	_, ok := m.serviceIdx[serviceId]
+	return ok
 }
 
 func (m *Manager) serviceNameExistsLocked(name string, excludeId string) bool {
-	for i := range m.config.Services {
-		if m.config.Services[i].Name == name && m.config.Services[i].Id != excludeId {
-			return true
-		}
+	if m.serviceNameIdx == nil {
+		m.rebuildIndexesLocked()
+	}
+	if idx, ok := m.serviceNameIdx[name]; ok {
+		return m.config.Services[idx].Id != excludeId
 	}
 	return false
 }

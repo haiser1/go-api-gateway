@@ -29,6 +29,7 @@ func setupTestManager(t *testing.T) (*Manager, string) {
 		},
 	}
 	m.atomicConfig.Store(m.config)
+	m.rebuildIndexesLocked()
 	return m, tmpDir
 }
 

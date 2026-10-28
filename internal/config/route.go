@@ -7,10 +7,11 @@ import (
 )
 
 func (m *Manager) routeNameExistsLocked(name string, excludeId string) bool {
-	for i := range m.config.Routes {
-		if m.config.Routes[i].Name == name && m.config.Routes[i].Id != excludeId {
-			return true
-		}
+	if m.routeNameIdx == nil {
+		m.rebuildIndexesLocked()
+	}
+	if idx, ok := m.routeNameIdx[name]; ok {
+		return m.config.Routes[idx].Id != excludeId
 	}
 	return false
 }

@@ -258,9 +258,53 @@ type Manager struct {
 	configPath   string
 	config       *Config // The current "write" source of truth
 	atomicConfig atomic.Pointer[Config]
-	Reload       chan struct{}
-	watcher      *fsnotify.Watcher
-	done         chan struct{}
+
+	// Index maps for O(1) lookups (guarded by mu, rebuilt on commit/load)
+	upstreamIdx     map[string]int // id -> index in Config.Upstreams
+	upstreamNameIdx map[string]int // name -> index in Config.Upstreams
+	serviceIdx      map[string]int // id -> index in Config.Services
+	serviceNameIdx  map[string]int // name -> index in Config.Services
+	routeIdx        map[string]int // id -> index in Config.Routes
+	routeNameIdx    map[string]int // name -> index in Config.Routes
+	globalPluginIdx map[string]int // name -> index in Config.GlobalPlugins
+
+	Reload  chan struct{}
+	watcher *fsnotify.Watcher
+	done    chan struct{}
+}
+
+// rebuildIndexesLocked rebuilds index maps for O(1) lookup.
+// Caller must ALREADY HOLD m.mu.
+func (m *Manager) rebuildIndexesLocked() {
+	if m.config == nil {
+		return
+	}
+
+	m.upstreamIdx = make(map[string]int, len(m.config.Upstreams))
+	m.upstreamNameIdx = make(map[string]int, len(m.config.Upstreams))
+	for i := range m.config.Upstreams {
+		m.upstreamIdx[m.config.Upstreams[i].Id] = i
+		m.upstreamNameIdx[m.config.Upstreams[i].Name] = i
+	}
+
+	m.serviceIdx = make(map[string]int, len(m.config.Services))
+	m.serviceNameIdx = make(map[string]int, len(m.config.Services))
+	for i := range m.config.Services {
+		m.serviceIdx[m.config.Services[i].Id] = i
+		m.serviceNameIdx[m.config.Services[i].Name] = i
+	}
+
+	m.routeIdx = make(map[string]int, len(m.config.Routes))
+	m.routeNameIdx = make(map[string]int, len(m.config.Routes))
+	for i := range m.config.Routes {
+		m.routeIdx[m.config.Routes[i].Id] = i
+		m.routeNameIdx[m.config.Routes[i].Name] = i
+	}
+
+	m.globalPluginIdx = make(map[string]int, len(m.config.GlobalPlugins))
+	for i := range m.config.GlobalPlugins {
+		m.globalPluginIdx[m.config.GlobalPlugins[i].Name] = i
+	}
 }
 
 // Close stops the configuration watcher.

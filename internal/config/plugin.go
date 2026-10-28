@@ -16,10 +16,11 @@ func (m *Manager) AddGlobalPlugin(p PluginConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for i := range m.config.GlobalPlugins {
-		if m.config.GlobalPlugins[i].Name == p.Name {
-			return fmt.Errorf("global plugin '%s' sudah ada", p.Name)
-		}
+	if m.globalPluginIdx == nil {
+		m.rebuildIndexesLocked()
+	}
+	if _, ok := m.globalPluginIdx[p.Name]; ok {
+		return fmt.Errorf("global plugin '%s' sudah ada", p.Name)
 	}
 
 	newCfg := m.config.DeepCopy()

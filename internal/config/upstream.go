@@ -9,19 +9,19 @@ import (
 // --- Helper internal (locked) ---
 
 func (m *Manager) upstreamExistsLocked(upstreamId string) bool {
-	for i := range m.config.Upstreams {
-		if m.config.Upstreams[i].Id == upstreamId {
-			return true
-		}
+	if m.upstreamIdx == nil {
+		m.rebuildIndexesLocked()
 	}
-	return false
+	_, ok := m.upstreamIdx[upstreamId]
+	return ok
 }
 
 func (m *Manager) upstreamNameExistsLocked(name string, excludeId string) bool {
-	for i := range m.config.Upstreams {
-		if m.config.Upstreams[i].Name == name && m.config.Upstreams[i].Id != excludeId {
-			return true
-		}
+	if m.upstreamNameIdx == nil {
+		m.rebuildIndexesLocked()
+	}
+	if idx, ok := m.upstreamNameIdx[name]; ok {
+		return m.config.Upstreams[idx].Id != excludeId
 	}
 	return false
 }

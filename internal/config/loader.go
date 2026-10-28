@@ -58,6 +58,7 @@ func (m *Manager) loadConfigFromFile() error {
 
 	m.config = &cfg
 	m.atomicConfig.Store(&cfg)
+	m.rebuildIndexesLocked()
 	return nil
 }
 
@@ -177,6 +178,7 @@ func (m *Manager) commitConfigLocked(newCfg *Config) error {
 	// Atomic publish — old *Config remains valid for existing readers
 	m.config = newCfg
 	m.atomicConfig.Store(newCfg)
+	m.rebuildIndexesLocked()
 
 	// Notify proxy
 	select {
