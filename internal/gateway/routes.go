@@ -25,6 +25,12 @@ func RegisterManagementRoutes(router *httprouter.Router, manager *config.Manager
 	router.PUT("/api/global-plugins/:pluginName", h.UpdateGlobalPlugin)
 	router.DELETE("/api/global-plugins/:pluginName", h.DeleteGlobalPlugin)
 
+	// === CORS Config Routes ===
+	router.GET("/api/config/cors", h.GetCORSConfig)
+	router.POST("/api/config/cors", h.AddCORSConfig)
+	router.PUT("/api/config/cors", h.UpdateCORSConfig)
+	router.DELETE("/api/config/cors", h.DeleteCORSConfig)
+
 	// === Service Routes ===
 	router.GET("/api/services", h.GetServices)
 	router.POST("/api/services", h.AddService)

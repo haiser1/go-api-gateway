@@ -610,3 +610,138 @@ func (h *ManagementHandler) DeletePluginFromRoute(w http.ResponseWriter, r *http
 	}
 	helper.RespondSuccess(w, http.StatusNoContent, "Plugin deleted successfully", nil)
 }
+
+// === CORS CONFIG HANDLERS ===
+
+func parseCORSConfig(p config.PluginConfig) domain.CORSConfig {
+	var allowedOrigins []string
+	if origins, ok := p.Config["allowed_origins"].([]interface{}); ok {
+		for _, o := range origins {
+			if s, ok := o.(string); ok {
+				allowedOrigins = append(allowedOrigins, s)
+			}
+		}
+	} else if origins, ok := p.Config["allowed_origins"].([]string); ok {
+		allowedOrigins = origins
+	}
+
+	var allowedMethods []string
+	if methods, ok := p.Config["allowed_methods"].([]interface{}); ok {
+		for _, m := range methods {
+			if s, ok := m.(string); ok {
+				allowedMethods = append(allowedMethods, s)
+			}
+		}
+	} else if methods, ok := p.Config["allowed_methods"].([]string); ok {
+		allowedMethods = methods
+	}
+
+	var allowedHeaders []string
+	if headers, ok := p.Config["allowed_headers"].([]interface{}); ok {
+		for _, h := range headers {
+			if s, ok := h.(string); ok {
+				allowedHeaders = append(allowedHeaders, s)
+			}
+		}
+	} else if headers, ok := p.Config["allowed_headers"].([]string); ok {
+		allowedHeaders = headers
+	}
+
+	var exposedHeaders []string
+	if headers, ok := p.Config["exposed_headers"].([]interface{}); ok {
+		for _, h := range headers {
+			if s, ok := h.(string); ok {
+				exposedHeaders = append(exposedHeaders, s)
+			}
+		}
+	} else if headers, ok := p.Config["exposed_headers"].([]string); ok {
+		exposedHeaders = headers
+	}
+
+	allowCredentials := false
+	if creds, ok := p.Config["allow_credentials"].(bool); ok {
+		allowCredentials = creds
+	}
+
+	maxAge := 0
+	if ageFloat, ok := p.Config["max_age"].(float64); ok {
+		maxAge = int(ageFloat)
+	} else if ageInt, ok := p.Config["max_age"].(int); ok {
+		maxAge = ageInt
+	}
+
+	return domain.CORSConfig{
+		Enabled:          p.Enabled,
+		AllowedOrigins:   allowedOrigins,
+		AllowedMethods:   allowedMethods,
+		AllowedHeaders:   allowedHeaders,
+		ExposedHeaders:   exposedHeaders,
+		AllowCredentials: allowCredentials,
+		MaxAge:           maxAge,
+	}
+}
+
+func corsConfigToPlugin(dto domain.CORSConfig) config.PluginConfig {
+	return config.PluginConfig{
+		Name:    "cors",
+		Enabled: dto.Enabled,
+		Config: map[string]interface{}{
+			"allowed_origins":   dto.AllowedOrigins,
+			"allowed_methods":   dto.AllowedMethods,
+			"allowed_headers":   dto.AllowedHeaders,
+			"exposed_headers":   dto.ExposedHeaders,
+			"allow_credentials": dto.AllowCredentials,
+			"max_age":           dto.MaxAge,
+		},
+	}
+}
+
+func (h *ManagementHandler) GetCORSConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	cfg := h.Manager.GetConfig()
+	for _, p := range cfg.GlobalPlugins {
+		if p.Name == "cors" {
+			corsDTO := parseCORSConfig(p)
+			helper.RespondSuccess(w, http.StatusOK, "CORS configuration fetched successfully", corsDTO)
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "CORS configuration not found", nil)
+}
+
+func (h *ManagementHandler) AddCORSConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var req domain.CORSConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+
+	plugin := corsConfigToPlugin(req)
+	if err := h.Manager.AddGlobalPlugin(plugin); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add CORS configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "CORS configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateCORSConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var req domain.CORSConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+
+	plugin := corsConfigToPlugin(req)
+	if err := h.Manager.UpdateGlobalPlugin("cors", plugin); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update CORS configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "CORS configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteCORSConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	if err := h.Manager.DeleteGlobalPlugin("cors"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete CORS configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "CORS configuration deleted successfully", nil)
+}
