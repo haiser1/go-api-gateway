@@ -139,3 +139,15 @@ type RouteDetailResponse struct {
 	Plugins []Plugin         `json:"plugins,omitempty"`
 	Service *ServiceSnapshot `json:"service"`
 }
+
+// CORSConfig adalah DTO untuk konfigurasi CORS spesifik
+type CORSConfig struct {
+	Enabled          bool     `json:"enabled"`
+	AllowedOrigins   []string `json:"allowed_origins"`
+	AllowedMethods   []string `json:"allowed_methods"`
+	AllowedHeaders   []string `json:"allowed_headers"`
+	ExposedHeaders   []string `json:"exposed_headers,omitempty"`
+	AllowCredentials bool     `json:"allow_credentials"`
+	MaxAge           int      `json:"max_age"`
+}
+
