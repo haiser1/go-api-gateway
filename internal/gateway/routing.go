@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sort"
 
 	"github.com/haiser1/go-api-gateway/internal/config"
 	"github.com/rs/zerolog/log"
@@ -100,9 +101,32 @@ func (p *Proxy) buildRoutingTable(cfg *config.Config) (*RadixTree, []config.Plug
 			}
 		}
 
+		// Check if CORS is enabled in the plugin chain
+		hasCORS := false
+		for _, pluginCfg := range resolvedPlugins {
+			if pluginCfg.Name == "cors" && pluginCfg.Enabled {
+				hasCORS = true
+				break
+			}
+		}
+
 		// Insert setiap kombinasi Method & Path ke Radix Tree
 		for _, path := range route.Paths {
-			for _, method := range route.Methods {
+			methods := route.Methods
+			if hasCORS {
+				hasOptions := false
+				for _, m := range methods {
+					if m == "OPTIONS" {
+						hasOptions = true
+						break
+					}
+				}
+				if !hasOptions {
+					methods = append(append([]string{}, methods...), "OPTIONS")
+				}
+			}
+
+			for _, method := range methods {
 				rr := ResolvedRoute{
 					Method:       method,
 					PathPattern:  path,
@@ -145,6 +169,32 @@ func (p *Proxy) resolvePluginChain(route config.Route, service config.Service, g
 	for _, p := range pluginMap {
 		chain = append(chain, p)
 	}
+
+	// Sort the chain by a predefined priority list to ensure deterministic execution order:
+	// cors -> logger/logging -> rate-limiting -> authorization -> others
+	pluginPriority := map[string]int{
+		"cors":          1,
+		"logger":        2,
+		"logging":       2,
+		"rate-limiting": 3,
+		"authorization": 4,
+	}
+
+	sort.Slice(chain, func(i, j int) bool {
+		p1, ok1 := pluginPriority[chain[i].Name]
+		p2, ok2 := pluginPriority[chain[j].Name]
+		if !ok1 {
+			p1 = 50
+		}
+		if !ok2 {
+			p2 = 50
+		}
+		if p1 != p2 {
+			return p1 < p2
+		}
+		return chain[i].Name < chain[j].Name
+	})
+
 	return chain
 }
 
@@ -162,6 +212,9 @@ func buildMiddlewareChain(rr *ResolvedRoute) http.Handler {
 	// Wrap plugins in reverse order (last plugin runs first)
 	for i := len(rr.Plugins) - 1; i >= 0; i-- {
 		pluginCfg := rr.Plugins[i]
+		if !pluginCfg.Enabled {
+			continue // Skip disabled plugins
+		}
 		if builder, ok := pluginRegistry[pluginCfg.Name]; ok {
 			plugin := builder(pluginCfg.Config)
 			next := handler
