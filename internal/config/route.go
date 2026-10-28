@@ -7,8 +7,8 @@ import (
 )
 
 func (m *Manager) routeNameExistsLocked(name string, excludeId string) bool {
-	for _, r := range m.config.Routes {
-		if r.Name == name && r.Id != excludeId {
+	for i := range m.config.Routes {
+		if m.config.Routes[i].Name == name && m.config.Routes[i].Id != excludeId {
 			return true
 		}
 	}
@@ -19,7 +19,8 @@ func (m *Manager) routeNameExistsLocked(name string, excludeId string) bool {
 // already exists in another route. Returns an error describing the conflict, or nil.
 // excludeId allows skipping the route being updated.
 func (m *Manager) routePathConflictsLocked(methods, paths []string, excludeId string) error {
-	for _, existing := range m.config.Routes {
+	for i := range m.config.Routes {
+		existing := &m.config.Routes[i]
 		if existing.Id == excludeId {
 			continue
 		}
@@ -62,8 +63,12 @@ func (m *Manager) AddRoute(r Route) error {
 	if err := m.routePathConflictsLocked(r.Methods, r.Paths, ""); err != nil {
 		return err
 	}
-	m.config.Routes = append(m.config.Routes, r)
-	err := m.saveAndReloadLocked()
+
+	// Copy-on-Write: deep copy config first
+	newCfg := m.config.DeepCopy()
+	newCfg.Routes = append(newCfg.Routes, r)
+
+	err := m.commitConfigLocked(newCfg)
 	if err == nil {
 		log.Info().Str("route_id", r.Id).Str("route_name", r.Name).Msg("Route added")
 	}
@@ -83,10 +88,13 @@ func (m *Manager) UpdateRoute(routeId string, updatedRoute Route) error {
 	if err := m.routePathConflictsLocked(updatedRoute.Methods, updatedRoute.Paths, routeId); err != nil {
 		return err
 	}
+
+	// Copy-on-Write: deep copy config first
+	newCfg := m.config.DeepCopy()
 	found := false
-	for i := range m.config.Routes {
-		if m.config.Routes[i].Id == routeId {
-			m.config.Routes[i] = updatedRoute
+	for i := range newCfg.Routes {
+		if newCfg.Routes[i].Id == routeId {
+			newCfg.Routes[i] = updatedRoute
 			found = true
 			break
 		}
@@ -94,7 +102,8 @@ func (m *Manager) UpdateRoute(routeId string, updatedRoute Route) error {
 	if !found {
 		return fmt.Errorf("route dengan ID '%s' tidak ditemukan", routeId)
 	}
-	err := m.saveAndReloadLocked()
+
+	err := m.commitConfigLocked(newCfg)
 	if err == nil {
 		log.Info().Str("route_id", routeId).Str("route_name", updatedRoute.Name).Msg("Route updated")
 	}
@@ -105,20 +114,23 @@ func (m *Manager) DeleteRoute(routeId string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Copy-on-Write: deep copy config first
+	newCfg := m.config.DeepCopy()
 	found := false
-	newRoutes := make([]Route, 0, len(m.config.Routes))
-	for _, r := range m.config.Routes {
-		if r.Id == routeId {
+	newRoutes := make([]Route, 0, len(newCfg.Routes))
+	for i := range newCfg.Routes {
+		if newCfg.Routes[i].Id == routeId {
 			found = true
 			continue
 		}
-		newRoutes = append(newRoutes, r)
+		newRoutes = append(newRoutes, newCfg.Routes[i])
 	}
 	if !found {
 		return fmt.Errorf("route dengan ID '%s' tidak ditemukan", routeId)
 	}
-	m.config.Routes = newRoutes
-	err := m.saveAndReloadLocked()
+	newCfg.Routes = newRoutes
+
+	err := m.commitConfigLocked(newCfg)
 	if err == nil {
 		log.Info().Str("route_id", routeId).Msg("Route deleted")
 	}
