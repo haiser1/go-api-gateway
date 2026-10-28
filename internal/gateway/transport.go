@@ -34,7 +34,7 @@ func createTransport(service config.Service) *http.Transport {
 			Timeout:   time.Duration(service.ConnectTimeout) * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		ForceAttemptHTTP2:     true,  // Required: custom DialContext disables HTTP/2 otherwise
+		ForceAttemptHTTP2:     true, // Required: custom DialContext disables HTTP/2 otherwise
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: time.Duration(service.ReadTimeout) * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
@@ -42,7 +42,7 @@ func createTransport(service config.Service) *http.Transport {
 		MaxIdleConnsPerHost:   100, // idle pool per individual host
 		MaxConnsPerHost:       250, // cap total active connections per host (prevents fd exhaustion)
 		IdleConnTimeout:       90 * time.Second,
-		DisableCompression:    false, // set true if upstream already compresses responses
+		DisableCompression:    false,     // set true if upstream already compresses responses
 		WriteBufferSize:       32 * 1024, // 32KB — reduces syscalls for large payloads
 		ReadBufferSize:        32 * 1024, // 32KB
 	}
