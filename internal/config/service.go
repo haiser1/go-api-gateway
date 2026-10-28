@@ -9,8 +9,8 @@ import (
 // --- Helper internal (locked) ---
 
 func (m *Manager) serviceExistsLocked(serviceId string) bool {
-	for _, s := range m.config.Services {
-		if s.Id == serviceId {
+	for i := range m.config.Services {
+		if m.config.Services[i].Id == serviceId {
 			return true
 		}
 	}
@@ -18,8 +18,8 @@ func (m *Manager) serviceExistsLocked(serviceId string) bool {
 }
 
 func (m *Manager) serviceNameExistsLocked(name string, excludeId string) bool {
-	for _, s := range m.config.Services {
-		if s.Name == name && s.Id != excludeId {
+	for i := range m.config.Services {
+		if m.config.Services[i].Name == name && m.config.Services[i].Id != excludeId {
 			return true
 		}
 	}
@@ -40,10 +40,13 @@ func (m *Manager) AddService(s Service) error {
 	if s.UpstreamId != "" && !m.upstreamExistsLocked(s.UpstreamId) {
 		return fmt.Errorf("upstream dengan ID '%s' tidak ditemukan", s.UpstreamId)
 	}
-	s.ApplyDefaults()
-	m.config.Services = append(m.config.Services, s)
 
-	err := m.saveAndReloadLocked()
+	// Copy-on-Write: deep copy config first
+	newCfg := m.config.DeepCopy()
+	s.ApplyDefaults()
+	newCfg.Services = append(newCfg.Services, s)
+
+	err := m.commitConfigLocked(newCfg)
 	if err == nil {
 		log.Info().Str("service_id", s.Id).Str("service_name", s.Name).Msg("Service added")
 	}
@@ -60,11 +63,14 @@ func (m *Manager) UpdateService(serviceId string, updatedService Service) error 
 	if updatedService.UpstreamId != "" && !m.upstreamExistsLocked(updatedService.UpstreamId) {
 		return fmt.Errorf("upstream dengan ID '%s' tidak ditemukan", updatedService.UpstreamId)
 	}
+
+	// Copy-on-Write: deep copy config first
+	newCfg := m.config.DeepCopy()
 	found := false
-	for i := range m.config.Services {
-		if m.config.Services[i].Id == serviceId {
+	for i := range newCfg.Services {
+		if newCfg.Services[i].Id == serviceId {
 			updatedService.ApplyDefaults()
-			m.config.Services[i] = updatedService
+			newCfg.Services[i] = updatedService
 			found = true
 			break
 		}
@@ -72,7 +78,8 @@ func (m *Manager) UpdateService(serviceId string, updatedService Service) error 
 	if !found {
 		return fmt.Errorf("service dengan ID '%s' tidak ditemukan", serviceId)
 	}
-	err := m.saveAndReloadLocked()
+
+	err := m.commitConfigLocked(newCfg)
 	if err == nil {
 		log.Info().Str("service_id", serviceId).Str("service_name", updatedService.Name).Msg("Service updated")
 	}
@@ -83,25 +90,30 @@ func (m *Manager) DeleteService(serviceId string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, r := range m.config.Routes {
-		if r.ServiceId == serviceId {
-			return fmt.Errorf("service tidak dapat dihapus, masih digunakan oleh route '%s' (ID: %s)", r.Name, r.Id)
+	// Check if service is referenced by any route (index-based to avoid Route copy)
+	for i := range m.config.Routes {
+		if m.config.Routes[i].ServiceId == serviceId {
+			return fmt.Errorf("service tidak dapat dihapus, masih digunakan oleh route '%s' (ID: %s)", m.config.Routes[i].Name, m.config.Routes[i].Id)
 		}
 	}
+
+	// Copy-on-Write: deep copy config first
+	newCfg := m.config.DeepCopy()
 	found := false
-	newServices := make([]Service, 0, len(m.config.Services))
-	for _, s := range m.config.Services {
-		if s.Id == serviceId {
+	newServices := make([]Service, 0, len(newCfg.Services))
+	for i := range newCfg.Services {
+		if newCfg.Services[i].Id == serviceId {
 			found = true
 			continue
 		}
-		newServices = append(newServices, s)
+		newServices = append(newServices, newCfg.Services[i])
 	}
 	if !found {
 		return fmt.Errorf("service dengan ID '%s' tidak ditemukan", serviceId)
 	}
-	m.config.Services = newServices
-	err := m.saveAndReloadLocked()
+	newCfg.Services = newServices
+
+	err := m.commitConfigLocked(newCfg)
 	if err == nil {
 		log.Info().Str("service_id", serviceId).Msg("Service deleted")
 	}
