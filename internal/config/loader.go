@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,9 +11,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
-
-// Add watcher to Manager struct
-// (Removed - moved to config.go)
 
 // NewManager creates a new Manager instance.
 func NewManager(configDir string) (*Manager, error) {
@@ -32,10 +30,12 @@ func NewManager(configDir string) (*Manager, error) {
 
 	// Load initial config
 	if err := m.loadConfigFromFile(); err != nil {
+		_ = watcher.Close()
 		return nil, err
 	}
 
 	// Start watcher
+	m.wg.Add(1)
 	go m.watchConfig()
 
 	return m, nil
@@ -58,66 +58,111 @@ func (m *Manager) loadConfigFromFile() error {
 
 	m.config = &cfg
 	m.atomicConfig.Store(&cfg)
+	m.lastHash = sha256.Sum256(data)
 	m.rebuildIndexesLocked()
+	return nil
+}
+
+// reloadFromFileIfChanged checks if file content actually changed before reloading.
+// This prevents redundant echo reloads when Admin API writes to the file.
+func (m *Manager) reloadFromFileIfChanged() error {
+	data, err := os.ReadFile(m.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	newHash := sha256.Sum256(data)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Content unchanged -> skip reload (Echo feedback prevention)
+	if newHash == m.lastHash {
+		log.Debug().Msg("Config file touched but content identical, skipping reload")
+		return nil
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	m.config = &cfg
+	m.atomicConfig.Store(&cfg)
+	m.lastHash = newHash
+	m.rebuildIndexesLocked()
+
+	// Notify reload (Non-blocking send)
+	select {
+	case m.Reload <- struct{}{}:
+	default:
+	}
+
+	log.Info().Msg("Config reloaded successfully from external file change")
 	return nil
 }
 
 // watchConfig watches the DIRECTORY for file changes with debouncing.
 func (m *Manager) watchConfig() {
-	watcher := m.watcher
-	defer watcher.Close()
+	defer m.wg.Done()
 
 	configDir := filepath.Dir(m.configPath)
 	configFile := filepath.Base(m.configPath)
 
-	// OPTIMASI 1: Pantau Direktori, bukan File.
-	// Ini menangani "Atomic Save" (Rename/Replace) dari editor modern.
-	if err := watcher.Add(configDir); err != nil {
+	// Pantau Direktori, bukan File (menangani atomic save editor)
+	if err := m.watcher.Add(configDir); err != nil {
 		log.Error().Err(err).Str("dir", configDir).Msg("Failed to watch config directory")
 		return
 	}
 
-	// Debounce timer - coalesce rapid events
 	const debounceDelay = 100 * time.Millisecond
 	var debounceTimer *time.Timer
+	var debounceC <-chan time.Time
+
+	// Pastikan timer di-stop saat goroutine selesai untuk mencegah leak
+	defer func() {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+	}()
 
 	for {
 		select {
 		case <-m.done:
 			return
 
-		case event, ok := <-watcher.Events:
+		case event, ok := <-m.watcher.Events:
 			if !ok {
 				return
 			}
 
 			// Filter: Hanya peduli jika file target yang berubah
 			if filepath.Base(event.Name) == configFile {
-				// OPTIMASI 2: Tangkap event Rename/Chmod juga (karena atomic save)
 				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
-
-					// Reset debounce timer
-					if debounceTimer != nil {
-						debounceTimer.Stop()
-					}
-
-					debounceTimer = time.AfterFunc(debounceDelay, func() {
-						log.Info().Str("file", configFile).Msg("Config changed detected, reloading...")
-
-						if err := m.loadConfigFromFile(); err != nil {
-							log.Error().Err(err).Msg("Failed to reload config")
-						} else {
-							// Notify reload (Non-blocking send)
+					if debounceTimer == nil {
+						debounceTimer = time.NewTimer(debounceDelay)
+						debounceC = debounceTimer.C
+					} else {
+						if !debounceTimer.Stop() {
 							select {
-							case m.Reload <- struct{}{}:
+							case <-debounceTimer.C:
 							default:
 							}
-							log.Info().Msg("Config reloaded successfully")
 						}
-					})
+						debounceTimer.Reset(debounceDelay)
+					}
 				}
 			}
-		case err, ok := <-watcher.Errors:
+
+		case <-debounceC:
+			debounceTimer = nil
+			debounceC = nil
+
+			if err := m.reloadFromFileIfChanged(); err != nil {
+				log.Error().Err(err).Msg("Failed to reload config from file")
+			}
+
+		case err, ok := <-m.watcher.Errors:
 			if !ok {
 				return
 			}
@@ -146,10 +191,6 @@ func (m *Manager) backupAndWriteFileLocked(data []byte) error {
 }
 
 // WriteConfigSafe is a public wrapper if needed by other components
-// Note: This assumes m.config is already modified by caller.
-// But wait, callers (AddRoute, etc) hold the lock.
-// This function needs to be careful not to double lock if used internally.
-// BETTER: Use saveAndReloadLocked for internal use. This is just for "Save Current State".
 func (m *Manager) WriteConfigSafe() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -175,6 +216,9 @@ func (m *Manager) commitConfigLocked(newCfg *Config) error {
 		return err
 	}
 
+	// Update hash to prevent watchConfig echo reload
+	m.lastHash = sha256.Sum256(data)
+
 	// Atomic publish — old *Config remains valid for existing readers
 	m.config = newCfg
 	m.atomicConfig.Store(newCfg)
@@ -193,4 +237,3 @@ func (m *Manager) commitConfigLocked(newCfg *Config) error {
 func (m *Manager) saveAndReloadLocked() error {
 	return m.commitConfigLocked(m.config)
 }
-

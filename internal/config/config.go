@@ -271,6 +271,10 @@ type Manager struct {
 	Reload  chan struct{}
 	watcher *fsnotify.Watcher
 	done    chan struct{}
+
+	lastHash  [32]byte // SHA-256 hash of latest config content
+	closeOnce sync.Once
+	wg        sync.WaitGroup
 }
 
 // rebuildIndexesLocked rebuilds index maps for O(1) lookup.
@@ -307,18 +311,23 @@ func (m *Manager) rebuildIndexesLocked() {
 	}
 }
 
-// Close stops the configuration watcher.
+// Close stops the configuration watcher and waits for background routines to finish.
 func (m *Manager) Close() error {
-	if m.done != nil {
-		close(m.done)
-	}
-	if m.watcher != nil {
-		return m.watcher.Close()
-	}
-	return nil
+	var err error
+	m.closeOnce.Do(func() {
+		if m.done != nil {
+			close(m.done)
+		}
+		if m.watcher != nil {
+			err = m.watcher.Close()
+		}
+		m.wg.Wait()
+	})
+	return err
 }
 
 // GetConfig returns the current configuration (thread-safe, lock-free).
 func (m *Manager) GetConfig() *Config {
 	return m.atomicConfig.Load()
 }
+
