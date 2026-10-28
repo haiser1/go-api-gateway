@@ -22,8 +22,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: '512M'
+          cpus: '4'
+          memory: '4G'
 
     restart: on-failure
 
@@ -46,8 +46,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4'
-          memory: 2G
+          cpus: '0.5'
+          memory: '256M'
 
   # -------------------------------------------------------
   # 3. K6 Load Tester (Over-resourced agar bukan bottleneck)
@@ -68,6 +68,6 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4'
-          memory: 4G
+          cpus: '2'
+          memory: 3G
     command: run /scripts/load-test.js
