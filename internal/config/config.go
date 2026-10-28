@@ -35,6 +35,21 @@ type PluginConfig struct {
 	Config  map[string]interface{} `yaml:"config" json:"config"`
 }
 
+// DeepCopy creates an independent copy of PluginConfig.
+func (p PluginConfig) DeepCopy() PluginConfig {
+	cp := PluginConfig{
+		Name:    p.Name,
+		Enabled: p.Enabled,
+	}
+	if p.Config != nil {
+		cp.Config = make(map[string]interface{}, len(p.Config))
+		for k, v := range p.Config {
+			cp.Config[k] = v
+		}
+	}
+	return cp
+}
+
 // === Upstream ===
 
 type HealthCheckConfig struct {
@@ -47,6 +62,16 @@ type UpstreamTarget struct {
 	Port        int                `yaml:"port" json:"port"`
 	Weight      int                `yaml:"weight" json:"weight"`
 	HealthCheck *HealthCheckConfig `yaml:"health_check,omitempty" json:"health_check,omitempty"`
+}
+
+// DeepCopy creates an independent copy of UpstreamTarget.
+func (t UpstreamTarget) DeepCopy() UpstreamTarget {
+	cp := t
+	if t.HealthCheck != nil {
+		hc := *t.HealthCheck
+		cp.HealthCheck = &hc
+	}
+	return cp
 }
 
 type Upstream struct {
@@ -68,6 +93,22 @@ func (u *Upstream) ApplyDefaults() {
 			u.Targets[i].Weight = 100
 		}
 	}
+}
+
+// DeepCopy creates an independent copy of Upstream.
+func (u Upstream) DeepCopy() Upstream {
+	cp := Upstream{
+		Id:        u.Id,
+		Name:      u.Name,
+		Algorithm: u.Algorithm,
+	}
+	if u.Targets != nil {
+		cp.Targets = make([]UpstreamTarget, len(u.Targets))
+		for i := range u.Targets {
+			cp.Targets[i] = u.Targets[i].DeepCopy()
+		}
+	}
+	return cp
 }
 
 // === Service ===
@@ -111,6 +152,18 @@ func (s *Service) ApplyDefaults() {
 	}
 }
 
+// DeepCopy creates an independent copy of Service.
+func (s Service) DeepCopy() Service {
+	cp := s
+	if s.Plugins != nil {
+		cp.Plugins = make([]PluginConfig, len(s.Plugins))
+		for i := range s.Plugins {
+			cp.Plugins[i] = s.Plugins[i].DeepCopy()
+		}
+	}
+	return cp
+}
+
 // === Route ===
 
 type Route struct {
@@ -123,6 +176,31 @@ type Route struct {
 	Plugins     []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
 }
 
+// DeepCopy creates an independent copy of Route.
+func (r Route) DeepCopy() Route {
+	cp := Route{
+		Id:          r.Id,
+		Name:        r.Name,
+		ServiceId:   r.ServiceId,
+		StripPrefix: r.StripPrefix,
+	}
+	if r.Methods != nil {
+		cp.Methods = make([]string, len(r.Methods))
+		copy(cp.Methods, r.Methods)
+	}
+	if r.Paths != nil {
+		cp.Paths = make([]string, len(r.Paths))
+		copy(cp.Paths, r.Paths)
+	}
+	if r.Plugins != nil {
+		cp.Plugins = make([]PluginConfig, len(r.Plugins))
+		for i := range r.Plugins {
+			cp.Plugins[i] = r.Plugins[i].DeepCopy()
+		}
+	}
+	return cp
+}
+
 // === Top-Level Config ===
 
 type Config struct {
@@ -131,6 +209,47 @@ type Config struct {
 	Upstreams     []Upstream     `yaml:"upstreams" json:"upstreams"`
 	Services      []Service      `yaml:"services" json:"services"`
 	Routes        []Route        `yaml:"routes" json:"routes"`
+}
+
+// DeepCopy creates a fully independent copy of the Config, safe for mutation.
+func (c *Config) DeepCopy() *Config {
+	if c == nil {
+		return nil
+	}
+
+	newCfg := &Config{
+		Server: c.Server,
+	}
+
+	if c.GlobalPlugins != nil {
+		newCfg.GlobalPlugins = make([]PluginConfig, len(c.GlobalPlugins))
+		for i := range c.GlobalPlugins {
+			newCfg.GlobalPlugins[i] = c.GlobalPlugins[i].DeepCopy()
+		}
+	}
+
+	if c.Upstreams != nil {
+		newCfg.Upstreams = make([]Upstream, len(c.Upstreams))
+		for i := range c.Upstreams {
+			newCfg.Upstreams[i] = c.Upstreams[i].DeepCopy()
+		}
+	}
+
+	if c.Services != nil {
+		newCfg.Services = make([]Service, len(c.Services))
+		for i := range c.Services {
+			newCfg.Services[i] = c.Services[i].DeepCopy()
+		}
+	}
+
+	if c.Routes != nil {
+		newCfg.Routes = make([]Route, len(c.Routes))
+		for i := range c.Routes {
+			newCfg.Routes[i] = c.Routes[i].DeepCopy()
+		}
+	}
+
+	return newCfg
 }
 
 // Manager holds the configuration and handles reloading.

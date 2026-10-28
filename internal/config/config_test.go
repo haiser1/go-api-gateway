@@ -129,3 +129,81 @@ func TestManager_GetConfig(t *testing.T) {
 		t.Errorf("expected log level debug, got %s", got.Server.LogLevel)
 	}
 }
+
+func TestConfig_DeepCopy(t *testing.T) {
+	orig := &Config{
+		Server: ServerConfig{ProxyPort: 8080, AdminPort: 8081, LogLevel: "info"},
+		GlobalPlugins: []PluginConfig{
+			{Name: "cors", Enabled: true, Config: map[string]interface{}{"origin": "*"}},
+		},
+		Upstreams: []Upstream{
+			{
+				Id: "u1", Name: "upstream-1", Algorithm: "round-robin",
+				Targets: []UpstreamTarget{
+					{Host: "127.0.0.1", Port: 8001, Weight: 100, HealthCheck: &HealthCheckConfig{Path: "/health"}},
+				},
+			},
+		},
+		Services: []Service{
+			{
+				Id: "s1", Name: "service-1", UpstreamId: "u1", Protocol: "http",
+				Plugins: []PluginConfig{
+					{Name: "rate-limit", Enabled: true, Config: map[string]interface{}{"rate": 100}},
+				},
+			},
+		},
+		Routes: []Route{
+			{
+				Id: "r1", Name: "route-1", ServiceId: "s1",
+				Methods: []string{"GET", "POST"},
+				Paths:   []string{"/api/v1"},
+				Plugins: []PluginConfig{
+					{Name: "auth", Enabled: true},
+				},
+			},
+		},
+	}
+
+	cp := orig.DeepCopy()
+	if cp == nil {
+		t.Fatal("expected non-nil copy")
+	}
+
+	// Mutate the copy
+	cp.Server.LogLevel = "error"
+	cp.GlobalPlugins[0].Config["origin"] = "https://example.com"
+	cp.Upstreams[0].Targets[0].Port = 9999
+	cp.Upstreams[0].Targets[0].HealthCheck.Path = "/status"
+	cp.Services[0].Plugins[0].Config["rate"] = 500
+	cp.Routes[0].Methods[0] = "PUT"
+	cp.Routes[0].Paths[0] = "/api/v2"
+
+	// Verify original is untouched
+	if orig.Server.LogLevel != "info" {
+		t.Errorf("original Server.LogLevel was mutated: %s", orig.Server.LogLevel)
+	}
+	if orig.GlobalPlugins[0].Config["origin"] != "*" {
+		t.Errorf("original GlobalPlugins was mutated: %v", orig.GlobalPlugins[0].Config["origin"])
+	}
+	if orig.Upstreams[0].Targets[0].Port != 8001 {
+		t.Errorf("original UpstreamTarget.Port was mutated: %d", orig.Upstreams[0].Targets[0].Port)
+	}
+	if orig.Upstreams[0].Targets[0].HealthCheck.Path != "/health" {
+		t.Errorf("original HealthCheck.Path was mutated: %s", orig.Upstreams[0].Targets[0].HealthCheck.Path)
+	}
+	if orig.Services[0].Plugins[0].Config["rate"] != 100 {
+		t.Errorf("original Service plugin config was mutated: %v", orig.Services[0].Plugins[0].Config["rate"])
+	}
+	if orig.Routes[0].Methods[0] != "GET" {
+		t.Errorf("original Route.Methods was mutated: %s", orig.Routes[0].Methods[0])
+	}
+	if orig.Routes[0].Paths[0] != "/api/v1" {
+		t.Errorf("original Route.Paths was mutated: %s", orig.Routes[0].Paths[0])
+	}
+
+	// Test nil config deep copy
+	var nilCfg *Config
+	if nilCfg.DeepCopy() != nil {
+		t.Error("expected nil for nil config DeepCopy")
+	}
+}
