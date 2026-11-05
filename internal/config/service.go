@@ -46,6 +46,9 @@ func (m *Manager) AddService(s Service) error {
 	s.ApplyDefaults()
 	newCfg.Services = append(newCfg.Services, s)
 
+	// Provision .env secrets when the service embeds the auth plugin
+	m.ensureAuthEnvForPluginsLocked(s.Plugins)
+
 	err := m.commitConfigLocked(newCfg)
 	if err == nil {
 		log.Info().Str("service_id", s.Id).Str("service_name", s.Name).Msg("Service added")

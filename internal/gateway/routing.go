@@ -171,13 +171,20 @@ func (p *Proxy) resolvePluginChain(route config.Route, service config.Service, g
 	}
 
 	// Sort the chain by a predefined priority list to ensure deterministic execution order:
-	// cors -> logger/logging -> rate-limiting -> authorization -> others
+	// metrics/prometheus -> cors -> logger/logging -> ip-restriction/bot-detection -> rate-limiting -> authorization -> request-transform -> others
 	pluginPriority := map[string]int{
-		"cors":          1,
-		"logger":        2,
-		"logging":       2,
-		"rate-limiting": 3,
-		"authorization": 4,
+		"metrics":                0,
+		"prometheus":             0,
+		"cors":                   1,
+		"logger":                 2,
+		"logging":                2,
+		"ip-restriction":         3,
+		"bot-detection":          3,
+		"rate-limiting":          4,
+		"auth":                   5,
+		"authorization":          5,
+		"request-transform":      6,
+		"request-transformation": 6,
 	}
 
 	sort.Slice(chain, func(i, j int) bool {

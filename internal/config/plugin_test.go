@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/haiser1/go-api-gateway/internal/secret"
 )
 
 func setupTestManager(t *testing.T) (*Manager, string) {
@@ -170,5 +172,64 @@ func TestManager_RoutePluginCRUD(t *testing.T) {
 	err = m.DeletePluginFromRoute("r1", "ratelimit")
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestManager_AddAuthPluginProvisionsEnvFile(t *testing.T) {
+	// Global-level add provisions the .env file
+	m, tmpDir := setupTestManager(t)
+	defer os.RemoveAll(tmpDir)
+	defer m.Close()
+
+	envPath := filepath.Join(tmpDir, ".env")
+	if _, err := os.Stat(envPath); !os.IsNotExist(err) {
+		t.Fatalf(".env should not exist before the auth plugin is added")
+	}
+
+	if err := m.AddGlobalPlugin(PluginConfig{Name: "auth", Enabled: true}); err != nil {
+		t.Fatalf("AddGlobalPlugin failed: %v", err)
+	}
+
+	secrets, err := secret.LoadFile(envPath)
+	if err != nil {
+		t.Fatalf("expected .env provisioned after auth plugin add: %v", err)
+	}
+	if secrets[secret.APIKeySecret] == "" || secrets[secret.JWTSecret] == "" {
+		t.Errorf("expected API_KEY_SECRET and JWT_SECRET in .env, got %v", secrets)
+	}
+
+	// Idempotent: re-provisioning must not regenerate existing values
+	if err := m.AddPluginToService("s1", PluginConfig{Name: "authorization", Enabled: false}); err != nil {
+		t.Fatalf("AddPluginToService failed: %v", err)
+	}
+	secrets2, err := secret.LoadFile(envPath)
+	if err != nil {
+		t.Fatalf("failed to re-read .env: %v", err)
+	}
+	for key, val := range secrets {
+		if secrets2[key] != val {
+			t.Errorf("existing secret %s was regenerated", key)
+		}
+	}
+
+	// Non-auth plugins and auth deleting must NOT provision anything
+	m2, tmpDir2 := setupTestManager(t)
+	defer os.RemoveAll(tmpDir2)
+	defer m2.Close()
+
+	if err := m2.AddGlobalPlugin(PluginConfig{Name: "cors", Enabled: true}); err != nil {
+		t.Fatalf("AddGlobalPlugin failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir2, ".env")); !os.IsNotExist(err) {
+		t.Errorf(".env must not be created for non-auth plugins")
+	}
+
+	// Route-level add with embedded auth plugin provisions the .env file
+	if err := m2.AddRoute(Route{Id: "r2", Name: "route2", ServiceId: "s1", Methods: []string{"GET"}, Paths: []string{"/r2"}, Plugins: []PluginConfig{{Name: "authorization", Enabled: false}}}); err != nil {
+		t.Fatalf("AddRoute failed: %v", err)
+	}
+	routeEnv := filepath.Join(tmpDir2, ".env")
+	if _, err := os.Stat(routeEnv); err != nil {
+		t.Fatalf("expected .env provisioned after route embedding auth plugin: %v", err)
 	}
 }
