@@ -1,2 +1,6 @@
 .env
 bin/
+performance/*.json
+/summary.json
+/breaking_point.json
+.agents/
