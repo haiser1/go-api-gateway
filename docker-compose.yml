@@ -1,7 +1,4 @@
 services:
-  # -------------------------------------------------------
-  # 1. API Gateway (Target Skripsi)
-  # -------------------------------------------------------
   api-gateway:
     build:
       context: .
@@ -12,24 +9,19 @@ services:
       - "8081:8081"
     environment:
       - APP_ENV=production
-      - GOMAXPROCS=2
+      - GOMAXPROCS=1          # sama dengan jumlah core yang dipin
+      - GOMEMLIMIT=200MiB     # ~80% dari limit, agar GC bekerja sebelum OOM-kill
     volumes:
       - ./configs:/configs
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: '4G'
+    cpuset: "0"
+    mem_limit: 256m
+    memswap_limit: 256m       # matikan swap, supaya OOM terlihat jujur
+    restart: "no"             # selama uji, agar OOM/crash tidak tertutup restart otomatis
 
-    restart: on-failure
-
-  # -------------------------------------------------------
-  # 2. Mock Server (Upstream Service)
-  # -------------------------------------------------------
   mock-server:
     build:
       context: .
@@ -38,36 +30,36 @@ services:
     ports:
       - "9090:9090"
     environment:
-      - GOMAXPROCS=4
+      - GOMAXPROCS=1
+      - GOMEMLIMIT=200MiB
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: '256M'
+    cpuset: "1"
+    mem_limit: 256m
+    memswap_limit: 256m
 
-  # -------------------------------------------------------
-  # 3. K6 Load Tester (Over-resourced agar bukan bottleneck)
-  # -------------------------------------------------------
   k6:
     image: grafana/k6:latest
     container_name: k6-load-test
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /workdir
     depends_on:
       - api-gateway
     environment:
       - TARGET_URL=http://api-gateway:8080
+      - GOMEMLIMIT=2500MiB    # ~80% dari limit, GC bekerja sebelum OOM-kill
+      - PRE_VUS=1500          # VU ~0.3MB -> ~0.5GB; host hanya 5.6GB RAM
+      - MAX_VUS=6000          # ~1.8GB worst-case; agar k6 tidak ikut OOM sebelum summary ditulis
     volumes:
       - ./performance:/scripts
+      - .:/workdir
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 3G
+    cpuset: "2,3"
+    mem_limit: 3g
+    memswap_limit: 3g         # total k6+gateway+mock ~3.5GB dari 5.6GB host, sisakan headroom OS
     command: run /scripts/load-test.js

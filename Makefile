@@ -1,4 +1,4 @@
-.PHONY: run run-dev build test docker-up docker-down docker-build docker-logs docker-stats docker-ps docker-clean
+.PHONY: run run-dev build test restart docker-up docker-down docker-build docker-logs docker-stats docker-ps docker-clean k6-test
 
 # ===================================================================
 # RUN COMMANDS
@@ -57,10 +57,14 @@ docker-clean:
 	@echo "Cleaning up unused docker resources..."
 	@docker system prune -f
 
+# Mematikan dan menyalakan ulang container
+restart: docker-down docker-up
+
 # jalankan test k6
 k6-test:
 	@echo "Running k6 test..."
-	@docker-compose run k6
+	@docker compose run --rm k6
+
 
 # ===================================================================
 # ANALYTICS & MONITORING
