@@ -141,6 +141,26 @@ func (cb *CircuitBreaker) GetState() string {
 	}
 }
 
+// Reset manually resets the circuit breaker back to the CLOSED state with zero failures.
+func (cb *CircuitBreaker) Reset() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	atomic.StoreInt32(&cb.state, StateClosed)
+	cb.failureCount = 0
+	cb.lastFailureTime = time.Time{}
+	cb.halfOpenProbe.Store(false)
+	log.Info().Msg("Circuit Breaker: Manually reset to CLOSED state")
+}
+
+// Stats returns the current state, consecutive failure count, and last failure time.
+func (cb *CircuitBreaker) Stats() (state string, failures int, lastFailure time.Time) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	return cb.GetState(), cb.failureCount, cb.lastFailureTime
+}
+
 // --- CIRCUIT BREAKER REGISTRY ---
 
 // circuitBreakers stores circuit breakers by service ID

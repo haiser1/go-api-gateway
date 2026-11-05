@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/haiser1/go-api-gateway/internal/config"
@@ -13,7 +14,11 @@ import (
 
 // ManagementHandler menampung logika untuk API manajemen
 type ManagementHandler struct {
-	Manager *config.Manager
+	Manager                *config.Manager
+	StartTime              time.Time
+	GetCircuitBreakerStats func(serviceId string) (state string, failures int, lastFailure time.Time)
+	ResetCircuitBreaker    func(serviceId string)
+	ResetMetrics           func()
 }
 
 // --- HELPER UNTUK KONVERSI DTO ---
@@ -744,4 +749,642 @@ func (h *ManagementHandler) DeleteCORSConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	helper.RespondSuccess(w, http.StatusNoContent, "CORS configuration deleted successfully", nil)
+}
+
+// --- Service-Level CORS Config Handlers ---
+
+func (h *ManagementHandler) GetServiceCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	cfg := h.Manager.GetConfig()
+	for _, s := range cfg.Services {
+		if s.Id == serviceId {
+			for _, p := range s.Plugins {
+				if p.Name == "cors" {
+					helper.RespondSuccess(w, http.StatusOK, "Service CORS configuration fetched successfully", parseCORSConfig(p))
+					return
+				}
+			}
+			helper.RespondError(w, http.StatusNotFound, "CORS configuration not found on service", nil)
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Service not found", nil)
+}
+
+func (h *ManagementHandler) AddServiceCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	var req domain.CORSConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+
+	plugin := corsConfigToPlugin(req)
+	if err := h.Manager.AddPluginToService(serviceId, plugin); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add CORS configuration to service", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "Service CORS configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateServiceCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	var req domain.CORSConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+
+	plugin := corsConfigToPlugin(req)
+	if err := h.Manager.UpdatePluginInService(serviceId, "cors", plugin); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update service CORS configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Service CORS configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteServiceCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	if err := h.Manager.DeletePluginFromService(serviceId, "cors"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete service CORS configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "Service CORS configuration deleted successfully", nil)
+}
+
+// --- Route-Level CORS Config Handlers ---
+
+func (h *ManagementHandler) GetRouteCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	cfg := h.Manager.GetConfig()
+	for _, rt := range cfg.Routes {
+		if rt.Id == routeId {
+			for _, p := range rt.Plugins {
+				if p.Name == "cors" {
+					helper.RespondSuccess(w, http.StatusOK, "Route CORS configuration fetched successfully", parseCORSConfig(p))
+					return
+				}
+			}
+			helper.RespondError(w, http.StatusNotFound, "CORS configuration not found on route", nil)
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Route not found", nil)
+}
+
+func (h *ManagementHandler) AddRouteCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	var req domain.CORSConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+
+	plugin := corsConfigToPlugin(req)
+	if err := h.Manager.AddPluginToRoute(routeId, plugin); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add CORS configuration to route", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "Route CORS configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateRouteCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	var req domain.CORSConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+
+	plugin := corsConfigToPlugin(req)
+	if err := h.Manager.UpdatePluginInRoute(routeId, "cors", plugin); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update route CORS configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Route CORS configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteRouteCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	if err := h.Manager.DeletePluginFromRoute(routeId, "cors"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete route CORS configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "Route CORS configuration deleted successfully", nil)
+}
+
+// === IP RESTRICTION CONFIG HANDLERS ===
+
+func extractStringSlice(raw interface{}) []string {
+	var res []string
+	switch v := raw.(type) {
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				res = append(res, s)
+			}
+		}
+	case []string:
+		res = append(res, v...)
+	}
+	return res
+}
+
+func extractStringMap(raw interface{}) map[string]string {
+	switch v := raw.(type) {
+	case map[string]interface{}:
+		res := make(map[string]string, len(v))
+		for k, val := range v {
+			if s, ok := val.(string); ok {
+				res[k] = s
+			}
+		}
+		return res
+	case map[string]string:
+		res := make(map[string]string, len(v))
+		for k, val := range v {
+			res[k] = val
+		}
+		return res
+	}
+	return nil
+}
+
+func parseIPRestrictionConfig(p config.PluginConfig) domain.IPRestrictionConfig {
+	allowed := extractStringSlice(p.Config["allowed_ips"])
+	if len(allowed) == 0 {
+		allowed = extractStringSlice(p.Config["whitelist"])
+	}
+	denied := extractStringSlice(p.Config["denied_ips"])
+	if len(denied) == 0 {
+		denied = extractStringSlice(p.Config["blacklist"])
+	}
+	bots := extractStringSlice(p.Config["blocked_bots"])
+	if len(bots) == 0 {
+		bots = extractStringSlice(p.Config["denied_user_agents"])
+	}
+	trustFF, _ := p.Config["trust_forwarded_for"].(bool)
+
+	statusCode := 0
+	if scFloat, ok := p.Config["status_code"].(float64); ok {
+		statusCode = int(scFloat)
+	} else if scInt, ok := p.Config["status_code"].(int); ok {
+		statusCode = scInt
+	}
+	msg, _ := p.Config["message"].(string)
+
+	return domain.IPRestrictionConfig{
+		Enabled:           p.Enabled,
+		AllowedIPs:        allowed,
+		DeniedIPs:         denied,
+		BlockedBots:       bots,
+		TrustForwardedFor: trustFF,
+		StatusCode:        statusCode,
+		Message:           msg,
+	}
+}
+
+func ipRestrictionToPlugin(dto domain.IPRestrictionConfig) config.PluginConfig {
+	cfg := map[string]interface{}{
+		"allowed_ips":         dto.AllowedIPs,
+		"denied_ips":          dto.DeniedIPs,
+		"blocked_bots":        dto.BlockedBots,
+		"trust_forwarded_for": dto.TrustForwardedFor,
+	}
+	if dto.StatusCode > 0 {
+		cfg["status_code"] = dto.StatusCode
+	}
+	if dto.Message != "" {
+		cfg["message"] = dto.Message
+	}
+	return config.PluginConfig{
+		Name:    "ip-restriction",
+		Enabled: dto.Enabled,
+		Config:  cfg,
+	}
+}
+
+func (h *ManagementHandler) GetIPRestrictionConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	cfg := h.Manager.GetConfig()
+	for _, p := range cfg.GlobalPlugins {
+		if p.Name == "ip-restriction" {
+			helper.RespondSuccess(w, http.StatusOK, "IP restriction configuration fetched successfully", parseIPRestrictionConfig(p))
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "IP restriction configuration not found", nil)
+}
+
+func (h *ManagementHandler) AddIPRestrictionConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var req domain.IPRestrictionConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.AddGlobalPlugin(ipRestrictionToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add IP restriction configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "IP restriction configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateIPRestrictionConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var req domain.IPRestrictionConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.UpdateGlobalPlugin("ip-restriction", ipRestrictionToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update IP restriction configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "IP restriction configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteIPRestrictionConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	if err := h.Manager.DeleteGlobalPlugin("ip-restriction"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete IP restriction configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "IP restriction configuration deleted successfully", nil)
+}
+
+func (h *ManagementHandler) GetServiceIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	cfg := h.Manager.GetConfig()
+	for _, s := range cfg.Services {
+		if s.Id == serviceId {
+			for _, p := range s.Plugins {
+				if p.Name == "ip-restriction" {
+					helper.RespondSuccess(w, http.StatusOK, "Service IP restriction configuration fetched successfully", parseIPRestrictionConfig(p))
+					return
+				}
+			}
+			helper.RespondError(w, http.StatusNotFound, "IP restriction configuration not found on service", nil)
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Service not found", nil)
+}
+
+func (h *ManagementHandler) AddServiceIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	var req domain.IPRestrictionConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.AddPluginToService(serviceId, ipRestrictionToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add IP restriction configuration to service", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "Service IP restriction configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateServiceIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	var req domain.IPRestrictionConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.UpdatePluginInService(serviceId, "ip-restriction", ipRestrictionToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update service IP restriction configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Service IP restriction configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteServiceIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	if err := h.Manager.DeletePluginFromService(serviceId, "ip-restriction"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete service IP restriction configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "Service IP restriction configuration deleted successfully", nil)
+}
+
+func (h *ManagementHandler) GetRouteIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	cfg := h.Manager.GetConfig()
+	for _, rt := range cfg.Routes {
+		if rt.Id == routeId {
+			for _, p := range rt.Plugins {
+				if p.Name == "ip-restriction" {
+					helper.RespondSuccess(w, http.StatusOK, "Route IP restriction configuration fetched successfully", parseIPRestrictionConfig(p))
+					return
+				}
+			}
+			helper.RespondError(w, http.StatusNotFound, "IP restriction configuration not found on route", nil)
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Route not found", nil)
+}
+
+func (h *ManagementHandler) AddRouteIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	var req domain.IPRestrictionConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.AddPluginToRoute(routeId, ipRestrictionToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add IP restriction configuration to route", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "Route IP restriction configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateRouteIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	var req domain.IPRestrictionConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.UpdatePluginInRoute(routeId, "ip-restriction", ipRestrictionToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update route IP restriction configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Route IP restriction configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteRouteIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	if err := h.Manager.DeletePluginFromRoute(routeId, "ip-restriction"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete route IP restriction configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "Route IP restriction configuration deleted successfully", nil)
+}
+
+// === REQUEST TRANSFORM CONFIG HANDLERS ===
+
+func parseRequestTransformConfig(p config.PluginConfig) domain.RequestTransformConfig {
+	return domain.RequestTransformConfig{
+		Enabled:               p.Enabled,
+		AddHeaders:            extractStringMap(p.Config["add_headers"]),
+		SetHeaders:            extractStringMap(p.Config["set_headers"]),
+		RemoveHeaders:         extractStringSlice(p.Config["remove_headers"]),
+		AddQueryParams:        extractStringMap(p.Config["add_query_params"]),
+		RemoveQueryParams:     extractStringSlice(p.Config["remove_query_params"]),
+		AddResponseHeaders:    extractStringMap(p.Config["add_response_headers"]),
+		SetResponseHeaders:    extractStringMap(p.Config["set_response_headers"]),
+		RemoveResponseHeaders: extractStringSlice(p.Config["remove_response_headers"]),
+	}
+}
+
+func requestTransformToPlugin(dto domain.RequestTransformConfig) config.PluginConfig {
+	return config.PluginConfig{
+		Name:    "request-transform",
+		Enabled: dto.Enabled,
+		Config: map[string]interface{}{
+			"add_headers":             dto.AddHeaders,
+			"set_headers":             dto.SetHeaders,
+			"remove_headers":          dto.RemoveHeaders,
+			"add_query_params":        dto.AddQueryParams,
+			"remove_query_params":     dto.RemoveQueryParams,
+			"add_response_headers":    dto.AddResponseHeaders,
+			"set_response_headers":    dto.SetResponseHeaders,
+			"remove_response_headers": dto.RemoveResponseHeaders,
+		},
+	}
+}
+
+func (h *ManagementHandler) GetRequestTransformConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	cfg := h.Manager.GetConfig()
+	for _, p := range cfg.GlobalPlugins {
+		if p.Name == "request-transform" {
+			helper.RespondSuccess(w, http.StatusOK, "Request transform configuration fetched successfully", parseRequestTransformConfig(p))
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Request transform configuration not found", nil)
+}
+
+func (h *ManagementHandler) AddRequestTransformConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var req domain.RequestTransformConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.AddGlobalPlugin(requestTransformToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add request transform configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "Request transform configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateRequestTransformConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var req domain.RequestTransformConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.UpdateGlobalPlugin("request-transform", requestTransformToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update request transform configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Request transform configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteRequestTransformConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	if err := h.Manager.DeleteGlobalPlugin("request-transform"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete request transform configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "Request transform configuration deleted successfully", nil)
+}
+
+func (h *ManagementHandler) GetServiceRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	cfg := h.Manager.GetConfig()
+	for _, s := range cfg.Services {
+		if s.Id == serviceId {
+			for _, p := range s.Plugins {
+				if p.Name == "request-transform" {
+					helper.RespondSuccess(w, http.StatusOK, "Service request transform configuration fetched successfully", parseRequestTransformConfig(p))
+					return
+				}
+			}
+			helper.RespondError(w, http.StatusNotFound, "Request transform configuration not found on service", nil)
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Service not found", nil)
+}
+
+func (h *ManagementHandler) AddServiceRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	var req domain.RequestTransformConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.AddPluginToService(serviceId, requestTransformToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add request transform configuration to service", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "Service request transform configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateServiceRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	var req domain.RequestTransformConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.UpdatePluginInService(serviceId, "request-transform", requestTransformToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update service request transform configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Service request transform configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteServiceRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	if err := h.Manager.DeletePluginFromService(serviceId, "request-transform"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete service request transform configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "Service request transform configuration deleted successfully", nil)
+}
+
+func (h *ManagementHandler) GetRouteRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	cfg := h.Manager.GetConfig()
+	for _, rt := range cfg.Routes {
+		if rt.Id == routeId {
+			for _, p := range rt.Plugins {
+				if p.Name == "request-transform" {
+					helper.RespondSuccess(w, http.StatusOK, "Route request transform configuration fetched successfully", parseRequestTransformConfig(p))
+					return
+				}
+			}
+			helper.RespondError(w, http.StatusNotFound, "Request transform configuration not found on route", nil)
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Route not found", nil)
+}
+
+func (h *ManagementHandler) AddRouteRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	var req domain.RequestTransformConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.AddPluginToRoute(routeId, requestTransformToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusConflict, "Failed to add request transform configuration to route", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusCreated, "Route request transform configuration added successfully", req)
+}
+
+func (h *ManagementHandler) UpdateRouteRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	var req domain.RequestTransformConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	if err := h.Manager.UpdatePluginInRoute(routeId, "request-transform", requestTransformToPlugin(req)); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to update route request transform configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Route request transform configuration updated successfully", req)
+}
+
+func (h *ManagementHandler) DeleteRouteRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	routeId := ps.ByName("routeId")
+	if err := h.Manager.DeletePluginFromRoute(routeId, "request-transform"); err != nil {
+		helper.RespondError(w, http.StatusNotFound, "Failed to delete route request transform configuration", err)
+		return
+	}
+	helper.RespondSuccess(w, http.StatusNoContent, "Route request transform configuration deleted successfully", nil)
+}
+
+// === GATEWAY STATUS, CIRCUIT BREAKER & CONFIG SNAPSHOT HANDLERS ===
+
+func (h *ManagementHandler) buildServiceBreakerStatus(svc config.Service) domain.ServiceCircuitBreakerStatus {
+	status := domain.ServiceCircuitBreakerStatus{
+		ServiceId:   svc.Id,
+		ServiceName: svc.Name,
+		State:       "CLOSED",
+	}
+	if h.GetCircuitBreakerStats != nil {
+		state, failures, lastFail := h.GetCircuitBreakerStats(svc.Id)
+		status.State = state
+		status.FailureCount = failures
+		if !lastFail.IsZero() {
+			status.LastFailureTime = lastFail.UTC().Format(time.RFC3339)
+		}
+	}
+	return status
+}
+
+func (h *ManagementHandler) GetGatewayStatus(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	cfg := h.Manager.GetConfig()
+	var uptime int64
+	if !h.StartTime.IsZero() {
+		uptime = int64(time.Since(h.StartTime).Seconds())
+	}
+
+	breakers := make([]domain.ServiceCircuitBreakerStatus, len(cfg.Services))
+	for i, svc := range cfg.Services {
+		breakers[i] = h.buildServiceBreakerStatus(svc)
+	}
+
+	resp := domain.GatewayStatusResponse{
+		Status:             "healthy",
+		UptimeSeconds:      uptime,
+		UpstreamsCount:     len(cfg.Upstreams),
+		ServicesCount:      len(cfg.Services),
+		RoutesCount:        len(cfg.Routes),
+		GlobalPluginsCount: len(cfg.GlobalPlugins),
+		CircuitBreakers:    breakers,
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Gateway status fetched successfully", resp)
+}
+
+func (h *ManagementHandler) GetServiceCircuitBreaker(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	cfg := h.Manager.GetConfig()
+	for _, svc := range cfg.Services {
+		if svc.Id == serviceId {
+			helper.RespondSuccess(w, http.StatusOK, "Service circuit breaker status fetched successfully", h.buildServiceBreakerStatus(svc))
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Service not found", nil)
+}
+
+func (h *ManagementHandler) ResetServiceCircuitBreaker(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	serviceId := ps.ByName("serviceId")
+	cfg := h.Manager.GetConfig()
+	for _, svc := range cfg.Services {
+		if svc.Id == serviceId {
+			if h.ResetCircuitBreaker != nil {
+				h.ResetCircuitBreaker(serviceId)
+			}
+			helper.RespondSuccess(w, http.StatusOK, "Service circuit breaker reset to CLOSED", h.buildServiceBreakerStatus(svc))
+			return
+		}
+	}
+	helper.RespondError(w, http.StatusNotFound, "Service not found", nil)
+}
+
+func (h *ManagementHandler) GetFullConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	cfg := h.Manager.GetConfig()
+	helper.RespondSuccess(w, http.StatusOK, "Full configuration fetched successfully", cfg)
+}
+
+func (h *ManagementHandler) ResetGatewayMetrics(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	if h.ResetMetrics != nil {
+		h.ResetMetrics()
+	}
+	helper.RespondSuccess(w, http.StatusOK, "Gateway metrics reset successfully", nil)
 }

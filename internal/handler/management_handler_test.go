@@ -156,3 +156,310 @@ func TestCORSConfigHandlers(t *testing.T) {
 		t.Errorf("Expected GET after delete to return 404, got %d", rr.Code)
 	}
 }
+
+func TestServiceAndRouteCORSConfigHandlers(t *testing.T) {
+	router, manager, tmpDir := setupTestRouter(t)
+	defer os.RemoveAll(tmpDir)
+	defer manager.Close()
+
+	// Seed upstream, service, and route
+	_ = manager.AddUpstream(config.Upstream{
+		Id:        "up-1",
+		Name:      "upstream-1",
+		Algorithm: "round-robin",
+		Targets:   []config.UpstreamTarget{{Host: "localhost", Port: 9090, Weight: 100}},
+	})
+	_ = manager.AddService(config.Service{
+		Id:         "svc-1",
+		Name:       "service-1",
+		UpstreamId: "up-1",
+		Protocol:   "http",
+	})
+	_ = manager.AddRoute(config.Route{
+		Id:        "rt-1",
+		Name:      "route-1",
+		Methods:   []string{"GET"},
+		Paths:     []string{"/api/v1/test"},
+		ServiceId: "svc-1",
+	})
+
+	corsPayload := domain.CORSConfig{
+		Enabled:          true,
+		AllowedOrigins:   []string{"https://app.example.com"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           600,
+	}
+	body, _ := json.Marshal(corsPayload)
+
+	// Service CORS CRUD
+	req := httptest.NewRequest("POST", "/api/services/svc-1/cors", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for POST /api/services/svc-1/cors, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest("GET", "/api/services/svc-1/cors", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GET /api/services/svc-1/cors, got %d", rr.Code)
+	}
+
+	corsPayload.MaxAge = 1200
+	updatedBody, _ := json.Marshal(corsPayload)
+	req = httptest.NewRequest("PUT", "/api/services/svc-1/cors", bytes.NewBuffer(updatedBody))
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for PUT /api/services/svc-1/cors, got %d", rr.Code)
+	}
+
+	req = httptest.NewRequest("DELETE", "/api/services/svc-1/cors", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for DELETE /api/services/svc-1/cors, got %d", rr.Code)
+	}
+
+	// Route CORS CRUD
+	req = httptest.NewRequest("POST", "/api/routes/rt-1/cors", bytes.NewBuffer(body))
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for POST /api/routes/rt-1/cors, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest("GET", "/api/routes/rt-1/cors", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GET /api/routes/rt-1/cors, got %d", rr.Code)
+	}
+
+	req = httptest.NewRequest("PUT", "/api/routes/rt-1/cors", bytes.NewBuffer(updatedBody))
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for PUT /api/routes/rt-1/cors, got %d", rr.Code)
+	}
+
+	req = httptest.NewRequest("DELETE", "/api/routes/rt-1/cors", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for DELETE /api/routes/rt-1/cors, got %d", rr.Code)
+	}
+}
+
+func TestIPRestrictionAndRequestTransformConfigHandlers(t *testing.T) {
+	router, manager, tmpDir := setupTestRouter(t)
+	defer os.RemoveAll(tmpDir)
+	defer manager.Close()
+
+	_ = manager.AddUpstream(config.Upstream{
+		Id:   "up-1",
+		Name: "upstream-1",
+		Targets: []config.UpstreamTarget{
+			{Host: "localhost", Port: 9090, Weight: 100},
+		},
+	})
+	_ = manager.AddService(config.Service{
+		Id:         "svc-1",
+		Name:       "service-1",
+		UpstreamId: "up-1",
+	})
+	_ = manager.AddRoute(config.Route{
+		Id:        "rt-1",
+		Name:      "route-1",
+		Methods:   []string{"GET"},
+		Paths:     []string{"/api/v1/items"},
+		ServiceId: "svc-1",
+	})
+
+	// 1. Global, Service, and Route IP Restriction CRUD
+	ipCfg := domain.IPRestrictionConfig{
+		Enabled:           true,
+		AllowedIPs:        []string{"10.0.0.0/8"},
+		DeniedIPs:         []string{"10.0.0.99"},
+		BlockedBots:       []string{"sqlmap"},
+		TrustForwardedFor: true,
+	}
+	ipBody, _ := json.Marshal(ipCfg)
+
+	for _, endpoint := range []string{
+		"/api/config/ip-restriction",
+		"/api/services/svc-1/ip-restriction",
+		"/api/routes/rt-1/ip-restriction",
+	} {
+		req := httptest.NewRequest("POST", endpoint, bytes.NewBuffer(ipBody))
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("POST %s: expected 201, got %d: %s", endpoint, rr.Code, rr.Body.String())
+		}
+
+		req = httptest.NewRequest("GET", endpoint, nil)
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("GET %s: expected 200, got %d", endpoint, rr.Code)
+		}
+
+		ipCfg.Message = "Custom blocked message"
+		updBody, _ := json.Marshal(ipCfg)
+		req = httptest.NewRequest("PUT", endpoint, bytes.NewBuffer(updBody))
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("PUT %s: expected 200, got %d", endpoint, rr.Code)
+		}
+
+		req = httptest.NewRequest("DELETE", endpoint, nil)
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("DELETE %s: expected 204, got %d", endpoint, rr.Code)
+		}
+	}
+
+	// 2. Global, Service, and Route Request Transform CRUD
+	rtCfg := domain.RequestTransformConfig{
+		Enabled:               true,
+		AddHeaders:            map[string]string{"X-Gateway": "true"},
+		RemoveHeaders:         []string{"X-Internal"},
+		AddQueryParams:        map[string]string{"v": "2"},
+		AddResponseHeaders:    map[string]string{"X-Served-By": "gw"},
+		RemoveResponseHeaders: []string{"X-Powered-By"},
+	}
+	rtBody, _ := json.Marshal(rtCfg)
+
+	for _, endpoint := range []string{
+		"/api/config/request-transform",
+		"/api/services/svc-1/request-transform",
+		"/api/routes/rt-1/request-transform",
+	} {
+		req := httptest.NewRequest("POST", endpoint, bytes.NewBuffer(rtBody))
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("POST %s: expected 201, got %d: %s", endpoint, rr.Code, rr.Body.String())
+		}
+
+		req = httptest.NewRequest("GET", endpoint, nil)
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("GET %s: expected 200, got %d", endpoint, rr.Code)
+		}
+
+		req = httptest.NewRequest("PUT", endpoint, bytes.NewBuffer(rtBody))
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("PUT %s: expected 200, got %d", endpoint, rr.Code)
+		}
+
+		req = httptest.NewRequest("DELETE", endpoint, nil)
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("DELETE %s: expected 204, got %d", endpoint, rr.Code)
+		}
+	}
+}
+
+func TestStatusCircuitBreakerConfigAndMetricsResetHandlers(t *testing.T) {
+	router, manager, tmpDir := setupTestRouter(t)
+	defer os.RemoveAll(tmpDir)
+	defer manager.Close()
+
+	_ = manager.AddUpstream(config.Upstream{
+		Id:      "up-cb",
+		Name:    "upstream-cb",
+		Targets: []config.UpstreamTarget{{Host: "localhost", Port: 9090, Weight: 100}},
+	})
+	_ = manager.AddService(config.Service{
+		Id:         "svc-cb",
+		Name:       "service-cb",
+		UpstreamId: "up-cb",
+	})
+
+	// Trip the circuit breaker for svc-cb (5 failures -> OPEN)
+	cb := gateway.GetCircuitBreaker("svc-cb")
+	for i := 0; i < 5; i++ {
+		cb.RecordFailure()
+	}
+	if cb.GetState() != "OPEN" {
+		t.Fatalf("expected circuit breaker to be OPEN, got %s", cb.GetState())
+	}
+
+	// 1. Check GET /api/services/svc-cb/circuit-breaker
+	req := httptest.NewRequest("GET", "/api/services/svc-cb/circuit-breaker", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET circuit-breaker, got %d", rr.Code)
+	}
+	var cbResp struct {
+		Success bool                               `json:"success"`
+		Data    domain.ServiceCircuitBreakerStatus `json:"data"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &cbResp)
+	if cbResp.Data.State != "OPEN" || cbResp.Data.FailureCount != 5 {
+		t.Errorf("expected state=OPEN and failures=5, got %+v", cbResp.Data)
+	}
+
+	// 2. Reset via POST /api/services/svc-cb/circuit-breaker/reset
+	req = httptest.NewRequest("POST", "/api/services/svc-cb/circuit-breaker/reset", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from POST circuit-breaker/reset, got %d", rr.Code)
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &cbResp)
+	if cbResp.Data.State != "CLOSED" || cbResp.Data.FailureCount != 0 {
+		t.Errorf("expected state=CLOSED and failures=0 after reset, got %+v", cbResp.Data)
+	}
+
+	// 3. Check GET /api/status
+	req = httptest.NewRequest("GET", "/api/status", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET /api/status, got %d", rr.Code)
+	}
+	var statusResp struct {
+		Success bool                         `json:"success"`
+		Data    domain.GatewayStatusResponse `json:"data"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &statusResp)
+	if statusResp.Data.Status != "healthy" || statusResp.Data.ServicesCount != 1 {
+		t.Errorf("unexpected status response: %+v", statusResp.Data)
+	}
+
+	// 4. Check GET /api/config
+	req = httptest.NewRequest("GET", "/api/config", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET /api/config, got %d", rr.Code)
+	}
+
+	// 5. Check POST /api/metrics/reset
+	gateway.DefaultMetrics.Record("GET", "/test", 200, 0)
+	if gateway.DefaultMetrics.Snapshot().TotalRequests == 0 {
+		t.Fatal("expected non-zero metrics before reset")
+	}
+	req = httptest.NewRequest("POST", "/api/metrics/reset", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from POST /api/metrics/reset, got %d", rr.Code)
+	}
+	if gateway.DefaultMetrics.Snapshot().TotalRequests != 0 {
+		t.Errorf("expected 0 total requests after reset, got %d", gateway.DefaultMetrics.Snapshot().TotalRequests)
+	}
+}

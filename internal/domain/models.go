@@ -151,3 +151,46 @@ type CORSConfig struct {
 	MaxAge           int      `json:"max_age"`
 }
 
+// IPRestrictionConfig adalah DTO untuk konfigurasi plugin ip-restriction / bot-detection
+type IPRestrictionConfig struct {
+	Enabled           bool     `json:"enabled"`
+	AllowedIPs        []string `json:"allowed_ips,omitempty"`
+	DeniedIPs         []string `json:"denied_ips,omitempty"`
+	BlockedBots       []string `json:"blocked_bots,omitempty"`
+	TrustForwardedFor bool     `json:"trust_forwarded_for"`
+	StatusCode        int      `json:"status_code,omitempty"`
+	Message           string   `json:"message,omitempty"`
+}
+
+// RequestTransformConfig adalah DTO untuk konfigurasi plugin request-transform
+type RequestTransformConfig struct {
+	Enabled               bool              `json:"enabled"`
+	AddHeaders            map[string]string `json:"add_headers,omitempty"`
+	SetHeaders            map[string]string `json:"set_headers,omitempty"`
+	RemoveHeaders         []string          `json:"remove_headers,omitempty"`
+	AddQueryParams        map[string]string `json:"add_query_params,omitempty"`
+	RemoveQueryParams     []string          `json:"remove_query_params,omitempty"`
+	AddResponseHeaders    map[string]string `json:"add_response_headers,omitempty"`
+	SetResponseHeaders    map[string]string `json:"set_response_headers,omitempty"`
+	RemoveResponseHeaders []string          `json:"remove_response_headers,omitempty"`
+}
+
+// ServiceCircuitBreakerStatus merepresentasikan status circuit breaker per service
+type ServiceCircuitBreakerStatus struct {
+	ServiceId       string `json:"service_id"`
+	ServiceName     string `json:"service_name"`
+	State           string `json:"state"`
+	FailureCount    int    `json:"failure_count"`
+	LastFailureTime string `json:"last_failure_time,omitempty"`
+}
+
+// GatewayStatusResponse merepresentasikan kesehatan dan ringkasan runtime gateway
+type GatewayStatusResponse struct {
+	Status             string                        `json:"status"`
+	UptimeSeconds      int64                         `json:"uptime_seconds"`
+	UpstreamsCount     int                           `json:"upstreams_count"`
+	ServicesCount      int                           `json:"services_count"`
+	RoutesCount        int                           `json:"routes_count"`
+	GlobalPluginsCount int                           `json:"global_plugins_count"`
+	CircuitBreakers    []ServiceCircuitBreakerStatus `json:"circuit_breakers"`
+}
