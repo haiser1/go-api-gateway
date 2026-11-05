@@ -1,99 +1,124 @@
-# ============================================================
-# configs/config.yaml
-# Hanya berisi NON-SECRET configuration
-# ============================================================
-
 server:
-  proxy_port: 8080
-  admin_port: 8081
-  log_level: info
-
-# Plugin yang berlaku untuk SEMUA route
+    proxy_port: 8080
+    admin_port: 8081
+    log_level: info
 global_plugins:
-  - name: logger
-    enabled: true
-    config:
-      format: json
-  - name: cors
-    enabled: true
-    config:
-      allowed_origins: ["*"]
-      allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
-      allowed_headers: ["Content-Type", "Authorization", "X-Requested-With"]
-      allow_credentials: true
-      max_age: 86400
-
-# Definisi upstream (bisa multi-target untuk load balancing nanti)
+    - name: metrics
+      enabled: true
+      config:
+        record_query: false
+    - name: logger
+      enabled: true
+      config:
+        format: json
+    - name: cors
+      enabled: true
+      config:
+        allow_credentials: true
+        allowed_headers:
+            - Content-Type
+            - Authorization
+            - X-Requested-With
+        allowed_methods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - OPTIONS
+            - PATCH
+        allowed_origins:
+            - '*'
+        exposed_headers:
+            - X-Request-Id
+        max_age: 86400
+    - name: auth
+      enabled: false
+      config:
+        type: jwt
 upstreams:
-  - id: upstream-mock-server
-    name: mock-server-upstream
-    algorithm: round-robin   # round-robin | least-conn | random
-    targets:
-      - host: mock-server
-        port: 9090
-        weight: 100
-        health_check:
-          path: /health
-          interval: 10s
-
-  - id: upstream-server1
-    name: server1-upstream
-    algorithm: round-robin
-    targets:
-      - host: localhost
-        port: 5002
-        weight: 100
-
-# Definisi service (logical, tidak terikat host langsung)
+    - id: upstream-mock-server
+      name: mock-server-upstream
+      algorithm: round-robin
+      targets:
+        - host: mock-server
+          port: 9090
+          weight: 100
+          health_check:
+            path: /health
+            interval: 10s
+    - id: upstream-server1
+      name: server1-upstream
+      algorithm: round-robin
+      targets:
+        - host: localhost
+          port: 5002
+          weight: 100
 services:
-  - id: 089529f1-b9ad-4f4d-bdad-000055545bde
-    name: server1-service
-    upstream_id: upstream-server1  # referensi ke upstream
-    protocol: http
-    timeout: 30
-    connect_timeout: 10
-    read_timeout: 30
-    retries: 3
-    retry_backoff: 1.5
-    # Plugin di level SERVICE berlaku untuk semua route service ini
-    plugins:
-      - name: authorization
-        enabled: false
-        config:
-          type: jwt
-          # SECRET TIDAK DI SINI — diambil dari env/secret manager
-
-  - id: b389b2f2-9bd9-4d11-a5b7-25e39f190ab7
-    name: mock-server
-    upstream_id: upstream-mock-server
-    protocol: http
-    timeout: 30
-    connect_timeout: 10
-    read_timeout: 30
-    retries: 2
-
-# Definisi route
+    - id: 089529f1-b9ad-4f4d-bdad-000055545bde
+      name: server1-service
+      upstream_id: upstream-server1
+      protocol: http
+      plugins:
+        - name: authorization
+          enabled: false
+          config:
+            type: jwt
+        - name: ip-restriction
+          enabled: false
+          config:
+            allowed_ips:
+                - 127.0.0.1
+                - 10.0.0.0/8
+                - 192.168.0.0/16
+            blocked_bots:
+                - sqlmap
+                - nikto
+            denied_ips:
+                - 203.0.113.0/24
+            trust_forwarded_for: true
+      timeout: 30
+      connect_timeout: 10
+      read_timeout: 30
+      retries: 3
+      retry_backoff: 1.5
+    - id: b389b2f2-9bd9-4d11-a5b7-25e39f190ab7
+      name: mock-server
+      upstream_id: upstream-mock-server
+      protocol: http
+      timeout: 30
+      connect_timeout: 10
+      read_timeout: 30
+      retries: 2
 routes:
-  - id: 1ba2045d-bb2e-4f86-ae06-fc6ac46c5361
-    name: hello-server-1
-    methods: [GET, OPTIONS]
-    paths:
-      - /api/v1/hello-server-1
-    service_id: 089529f1-b9ad-4f4d-bdad-000055545bde
-    strip_prefix: false
-    # Plugin di level ROUTE — override/tambah di atas service plugin
-    plugins:
-      - name: rate-limiting
-        enabled: true
-        config:
-          requests_per_minute: 100
-
-  - id: 71b255bb-7cc8-4926-93c9-0f531115d988
-    name: mock-route
-    methods: [GET, OPTIONS]
-    paths:
-      - /mock
-    service_id: b389b2f2-9bd9-4d11-a5b7-25e39f190ab7
-# ```
-
-# ---
+    - id: 1ba2045d-bb2e-4f86-ae06-fc6ac46c5361
+      name: hello-server-1
+      methods:
+        - GET
+        - OPTIONS
+      paths:
+        - /api/v1/hello-server-1
+      service_id: 089529f1-b9ad-4f4d-bdad-000055545bde
+      plugins:
+        - name: rate-limiting
+          enabled: true
+          config:
+            requests_per_minute: 100
+        - name: request-transform
+          enabled: true
+          config:
+            add_headers:
+                X-Gateway-Proxy: go-api-gateway
+            add_response_headers:
+                X-Served-By: go-api-gateway
+            remove_headers:
+                - X-Internal-Debug
+            remove_response_headers:
+                - X-Powered-By
+    - id: 71b255bb-7cc8-4926-93c9-0f531115d988
+      name: mock-route
+      methods:
+        - GET
+        - OPTIONS
+      paths:
+        - /mock
+      service_id: b389b2f2-9bd9-4d11-a5b7-25e39f190ab7
