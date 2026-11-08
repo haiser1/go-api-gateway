@@ -1,8 +1,12 @@
 package domain
 
+// All request DTOs carry `validate:"..."` tags checked by the centralized
+// validator package (validator.ValidateStruct) at the Management API
+// boundary. The binding tags are legacy and unused.
+
 // Plugin adalah DTO untuk plugin (tanpa ID, dikelola by Name)
 type Plugin struct {
-	Name    string                 `json:"name"`
+	Name    string                 `json:"name" validate:"required"`
 	Enabled bool                   `json:"enabled,omitempty"`
 	Config  map[string]interface{} `json:"config"`
 }
@@ -15,22 +19,22 @@ type HealthCheckDTO struct {
 }
 
 type UpstreamTargetDTO struct {
-	Host        string          `json:"host" binding:"required"`
-	Port        int             `json:"port"`
-	Weight      int             `json:"weight"`
+	Host        string          `json:"host" binding:"required" validate:"required"`
+	Port        int             `json:"port" validate:"omitempty,min=1,max=65535"`
+	Weight      int             `json:"weight" validate:"omitempty,min=1"`
 	HealthCheck *HealthCheckDTO `json:"health_check,omitempty"`
 }
 
 type AddUpstreamRequest struct {
-	Name      string              `json:"name" binding:"required"`
-	Algorithm string              `json:"algorithm"`
-	Targets   []UpstreamTargetDTO `json:"targets" binding:"required"`
+	Name      string              `json:"name" binding:"required" validate:"required"`
+	Algorithm string              `json:"algorithm" validate:"omitempty,oneof=round-robin weighted-round-robin"`
+	Targets   []UpstreamTargetDTO `json:"targets" binding:"required" validate:"required,min=1,dive"`
 }
 
 type UpdateUpstreamRequest struct {
-	Name      string              `json:"name" binding:"required"`
-	Algorithm string              `json:"algorithm"`
-	Targets   []UpstreamTargetDTO `json:"targets" binding:"required"`
+	Name      string              `json:"name" binding:"required" validate:"required"`
+	Algorithm string              `json:"algorithm" validate:"omitempty,oneof=round-robin weighted-round-robin"`
+	Targets   []UpstreamTargetDTO `json:"targets" binding:"required" validate:"required,min=1,dive"`
 }
 
 type UpstreamDetailResponse struct {
@@ -43,55 +47,55 @@ type UpstreamDetailResponse struct {
 // === SERVICE DTOs ===
 
 type AddServiceRequest struct {
-	Name       string   `json:"name" binding:"required"`
-	UpstreamId string   `json:"upstream_id" binding:"required"`
-	Protocol   string   `json:"protocol"`
-	Plugins    []Plugin `json:"plugins,omitempty"`
+	Name       string   `json:"name" binding:"required" validate:"required"`
+	UpstreamId string   `json:"upstream_id" binding:"required" validate:"required"`
+	Protocol   string   `json:"protocol" validate:"omitempty,oneof=http https"`
+	Plugins    []Plugin `json:"plugins,omitempty" validate:"omitempty,dive"`
 
 	// Timeout settings (in seconds)
-	Timeout        int `json:"timeout,omitempty"`
-	ConnectTimeout int `json:"connect_timeout,omitempty"`
-	ReadTimeout    int `json:"read_timeout,omitempty"`
+	Timeout        int `json:"timeout,omitempty" validate:"omitempty,min=1"`
+	ConnectTimeout int `json:"connect_timeout,omitempty" validate:"omitempty,min=1"`
+	ReadTimeout    int `json:"read_timeout,omitempty" validate:"omitempty,min=1"`
 
 	// Retry settings
-	Retries      int     `json:"retries,omitempty"`
-	RetryBackoff float64 `json:"retry_backoff,omitempty"`
+	Retries      int     `json:"retries,omitempty" validate:"omitempty,min=0"`
+	RetryBackoff float64 `json:"retry_backoff,omitempty" validate:"omitempty,min=0"`
 }
 
 type UpdateServiceRequest struct {
-	Name       string   `json:"name" binding:"required"`
-	UpstreamId string   `json:"upstream_id" binding:"required"`
-	Protocol   string   `json:"protocol"`
-	Plugins    []Plugin `json:"plugins,omitempty"`
+	Name       string   `json:"name" binding:"required" validate:"required"`
+	UpstreamId string   `json:"upstream_id" binding:"required" validate:"required"`
+	Protocol   string   `json:"protocol" validate:"omitempty,oneof=http https"`
+	Plugins    []Plugin `json:"plugins,omitempty" validate:"omitempty,dive"`
 
 	// Timeout settings (in seconds)
-	Timeout        int `json:"timeout,omitempty"`
-	ConnectTimeout int `json:"connect_timeout,omitempty"`
-	ReadTimeout    int `json:"read_timeout,omitempty"`
+	Timeout        int `json:"timeout,omitempty" validate:"omitempty,min=1"`
+	ConnectTimeout int `json:"connect_timeout,omitempty" validate:"omitempty,min=1"`
+	ReadTimeout    int `json:"read_timeout,omitempty" validate:"omitempty,min=1"`
 
 	// Retry settings
-	Retries      int     `json:"retries,omitempty"`
-	RetryBackoff float64 `json:"retry_backoff,omitempty"`
+	Retries      int     `json:"retries,omitempty" validate:"omitempty,min=0"`
+	RetryBackoff float64 `json:"retry_backoff,omitempty" validate:"omitempty,min=0"`
 }
 
 // === ROUTE DTOs ===
 
 type AddRouteRequest struct {
-	Name        string   `json:"name" binding:"required"`
-	Methods     []string `json:"methods" binding:"required"`
-	Paths       []string `json:"paths" binding:"required"`
-	ServiceId   string   `json:"service_id" binding:"required"`
+	Name        string   `json:"name" binding:"required" validate:"required"`
+	Methods     []string `json:"methods" binding:"required" validate:"required,min=1,unique,dive,oneof=GET POST PUT PATCH DELETE HEAD OPTIONS TRACE CONNECT"`
+	Paths       []string `json:"paths" binding:"required" validate:"required,min=1,unique,dive,startswith=/"`
+	ServiceId   string   `json:"service_id" binding:"required" validate:"required"`
 	StripPrefix bool     `json:"strip_prefix,omitempty"`
-	Plugins     []Plugin `json:"plugins,omitempty"`
+	Plugins     []Plugin `json:"plugins,omitempty" validate:"omitempty,dive"`
 }
 
 type UpdateRouteRequest struct {
-	Name        string   `json:"name" binding:"required"`
-	Methods     []string `json:"methods" binding:"required"`
-	Paths       []string `json:"paths" binding:"required"`
-	ServiceId   string   `json:"service_id" binding:"required"`
+	Name        string   `json:"name" binding:"required" validate:"required"`
+	Methods     []string `json:"methods" binding:"required" validate:"required,min=1,unique,dive,oneof=GET POST PUT PATCH DELETE HEAD OPTIONS TRACE CONNECT"`
+	Paths       []string `json:"paths" binding:"required" validate:"required,min=1,unique,dive,startswith=/"`
+	ServiceId   string   `json:"service_id" binding:"required" validate:"required"`
 	StripPrefix bool     `json:"strip_prefix,omitempty"`
-	Plugins     []Plugin `json:"plugins,omitempty"`
+	Plugins     []Plugin `json:"plugins,omitempty" validate:"omitempty,dive"`
 }
 
 // === RESPONSE DTOs ===
@@ -148,7 +152,7 @@ type CORSConfig struct {
 	AllowedHeaders   []string `json:"allowed_headers"`
 	ExposedHeaders   []string `json:"exposed_headers,omitempty"`
 	AllowCredentials bool     `json:"allow_credentials"`
-	MaxAge           int      `json:"max_age"`
+	MaxAge           int      `json:"max_age" validate:"omitempty,min=0"`
 }
 
 // IPRestrictionConfig adalah DTO untuk konfigurasi plugin ip-restriction / bot-detection
@@ -158,7 +162,7 @@ type IPRestrictionConfig struct {
 	DeniedIPs         []string `json:"denied_ips,omitempty"`
 	BlockedBots       []string `json:"blocked_bots,omitempty"`
 	TrustForwardedFor bool     `json:"trust_forwarded_for"`
-	StatusCode        int      `json:"status_code,omitempty"`
+	StatusCode        int      `json:"status_code,omitempty" validate:"omitempty,min=400,max=599"`
 	Message           string   `json:"message,omitempty"`
 }
 

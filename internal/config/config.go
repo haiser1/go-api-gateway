@@ -10,9 +10,9 @@ import (
 // === Server Config ===
 
 type ServerConfig struct {
-	ProxyPort int    `yaml:"proxy_port" json:"proxy_port"`
-	AdminPort int    `yaml:"admin_port" json:"admin_port"`
-	LogLevel  string `yaml:"log_level" json:"log_level"`
+	ProxyPort int    `yaml:"proxy_port" json:"proxy_port" validate:"omitempty,min=1,max=65535"`
+	AdminPort int    `yaml:"admin_port" json:"admin_port" validate:"omitempty,min=1,max=65535"`
+	LogLevel  string `yaml:"log_level" json:"log_level" validate:"omitempty,oneof=trace debug info warn error fatal panic disabled"`
 }
 
 func (s *ServerConfig) ApplyDefaults() {
@@ -30,7 +30,7 @@ func (s *ServerConfig) ApplyDefaults() {
 // === Plugin Config ===
 
 type PluginConfig struct {
-	Name    string                 `yaml:"name" json:"name"`
+	Name    string                 `yaml:"name" json:"name" validate:"required"`
 	Enabled bool                   `yaml:"enabled" json:"enabled"`
 	Config  map[string]interface{} `yaml:"config" json:"config"`
 }
@@ -42,12 +42,40 @@ func (p PluginConfig) DeepCopy() PluginConfig {
 		Enabled: p.Enabled,
 	}
 	if p.Config != nil {
-		cp.Config = make(map[string]interface{}, len(p.Config))
-		for k, v := range p.Config {
-			cp.Config[k] = v
-		}
+		cp.Config = deepCopyConfigMap(p.Config)
 	}
 	return cp
+}
+
+func deepCopyConfigMap(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		out[k] = deepCopyConfigValue(v)
+	}
+	return out
+}
+
+func deepCopyConfigValue(v interface{}) interface{} {
+	switch value := v.(type) {
+	case map[string]interface{}:
+		return deepCopyConfigMap(value)
+	case map[interface{}]interface{}:
+		out := make(map[interface{}]interface{}, len(value))
+		for k, item := range value {
+			out[k] = deepCopyConfigValue(item)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(value))
+		for i := range value {
+			out[i] = deepCopyConfigValue(value[i])
+		}
+		return out
+	case []string:
+		return append([]string(nil), value...)
+	default:
+		return v
+	}
 }
 
 // === Upstream ===
@@ -58,9 +86,9 @@ type HealthCheckConfig struct {
 }
 
 type UpstreamTarget struct {
-	Host        string             `yaml:"host" json:"host"`
-	Port        int                `yaml:"port" json:"port"`
-	Weight      int                `yaml:"weight" json:"weight"`
+	Host        string             `yaml:"host" json:"host" validate:"required"`
+	Port        int                `yaml:"port" json:"port" validate:"omitempty,min=1,max=65535"`
+	Weight      int                `yaml:"weight" json:"weight" validate:"omitempty,min=1"`
 	HealthCheck *HealthCheckConfig `yaml:"health_check,omitempty" json:"health_check,omitempty"`
 }
 
@@ -75,10 +103,10 @@ func (t UpstreamTarget) DeepCopy() UpstreamTarget {
 }
 
 type Upstream struct {
-	Id        string           `yaml:"id" json:"id"`
-	Name      string           `yaml:"name" json:"name"`
-	Algorithm string           `yaml:"algorithm" json:"algorithm"`
-	Targets   []UpstreamTarget `yaml:"targets" json:"targets"`
+	Id        string           `yaml:"id" json:"id" validate:"required"`
+	Name      string           `yaml:"name" json:"name" validate:"omitempty,max=128"`
+	Algorithm string           `yaml:"algorithm" json:"algorithm" validate:"omitempty,oneof=round-robin weighted-round-robin"`
+	Targets   []UpstreamTarget `yaml:"targets" json:"targets" validate:"omitempty,min=1,dive"`
 }
 
 func (u *Upstream) ApplyDefaults() {
@@ -114,20 +142,21 @@ func (u Upstream) DeepCopy() Upstream {
 // === Service ===
 
 type Service struct {
-	Id         string         `yaml:"id" json:"id"`
-	Name       string         `yaml:"name" json:"name"`
-	UpstreamId string         `yaml:"upstream_id" json:"upstream_id"`
-	Protocol   string         `yaml:"protocol" json:"protocol"`
-	Plugins    []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
+	Id         string         `yaml:"id" json:"id" validate:"required"`
+	Name       string         `yaml:"name" json:"name" validate:"omitempty,max=128"`
+	UpstreamId string         `yaml:"upstream_id" json:"upstream_id" validate:"required"`
+	Protocol   string         `yaml:"protocol" json:"protocol" validate:"omitempty,oneof=http https"`
+	Plugins    []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty" validate:"dive"`
 
-	// Timeout settings (in seconds)
-	Timeout        int `yaml:"timeout,omitempty" json:"timeout,omitempty"`                 // Total request timeout (default: 30)
-	ConnectTimeout int `yaml:"connect_timeout,omitempty" json:"connect_timeout,omitempty"` // Connection timeout (default: 10)
-	ReadTimeout    int `yaml:"read_timeout,omitempty" json:"read_timeout,omitempty"`       // Read timeout (default: 30)
+	// Timeout settings (in seconds) — zero means "use the documented
+	// default" (ApplyDefaults); only negative values are invalid.
+	Timeout        int `yaml:"timeout,omitempty" json:"timeout,omitempty" validate:"omitempty,min=0"`                 // Total request timeout (default: 30)
+	ConnectTimeout int `yaml:"connect_timeout,omitempty" json:"connect_timeout,omitempty" validate:"omitempty,min=0"` // Connection timeout (default: 10)
+	ReadTimeout    int `yaml:"read_timeout,omitempty" json:"read_timeout,omitempty" validate:"omitempty,min=0"`       // Read timeout (default: 30)
 
 	// Retry settings
-	Retries      int     `yaml:"retries,omitempty" json:"retries,omitempty"`             // Number of retries (default: 0)
-	RetryBackoff float64 `yaml:"retry_backoff,omitempty" json:"retry_backoff,omitempty"` // Backoff multiplier (default: 1.5)
+	Retries      int     `yaml:"retries,omitempty" json:"retries,omitempty" validate:"omitempty,min=0"`             // Number of retries (default: 0)
+	RetryBackoff float64 `yaml:"retry_backoff,omitempty" json:"retry_backoff,omitempty" validate:"omitempty,min=0"` // Backoff multiplier (default: 1.5)
 }
 
 // ApplyDefaults sets sensible defaults for zero-value fields
@@ -167,13 +196,13 @@ func (s Service) DeepCopy() Service {
 // === Route ===
 
 type Route struct {
-	Id          string         `yaml:"id" json:"id"`
-	Name        string         `yaml:"name" json:"name"`
-	Methods     []string       `yaml:"methods" json:"methods"`
-	Paths       []string       `yaml:"paths" json:"paths"`
-	ServiceId   string         `yaml:"service_id" json:"service_id"`
+	Id          string         `yaml:"id" json:"id" validate:"required"`
+	Name        string         `yaml:"name" json:"name" validate:"omitempty,max=128"`
+	Methods     []string       `yaml:"methods" json:"methods" validate:"required,min=1,unique,dive,oneof=GET POST PUT PATCH DELETE HEAD OPTIONS TRACE CONNECT"`
+	Paths       []string       `yaml:"paths" json:"paths" validate:"required,min=1,unique,dive,startswith=/"`
+	ServiceId   string         `yaml:"service_id" json:"service_id" validate:"required"`
 	StripPrefix bool           `yaml:"strip_prefix,omitempty" json:"strip_prefix,omitempty"`
-	Plugins     []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
+	Plugins     []PluginConfig `yaml:"plugins,omitempty" json:"plugins,omitempty" validate:"dive"`
 }
 
 // DeepCopy creates an independent copy of Route.
@@ -205,10 +234,11 @@ func (r Route) DeepCopy() Route {
 
 type Config struct {
 	Server        ServerConfig   `yaml:"server" json:"server"`
-	GlobalPlugins []PluginConfig `yaml:"global_plugins" json:"global_plugins"`
-	Upstreams     []Upstream     `yaml:"upstreams" json:"upstreams"`
-	Services      []Service      `yaml:"services" json:"services"`
-	Routes        []Route        `yaml:"routes" json:"routes"`
+	Auth          *AuthConfig    `yaml:"auth,omitempty" json:"auth,omitempty"`
+	GlobalPlugins []PluginConfig `yaml:"global_plugins" json:"global_plugins" validate:"omitempty,dive"`
+	Upstreams     []Upstream     `yaml:"upstreams" json:"upstreams" validate:"omitempty,dive"`
+	Services      []Service      `yaml:"services" json:"services" validate:"omitempty,dive"`
+	Routes        []Route        `yaml:"routes" json:"routes" validate:"omitempty,dive"`
 }
 
 // DeepCopy creates a fully independent copy of the Config, safe for mutation.
@@ -219,6 +249,7 @@ func (c *Config) DeepCopy() *Config {
 
 	newCfg := &Config{
 		Server: c.Server,
+		Auth:   c.Auth.DeepCopy(),
 	}
 
 	if c.GlobalPlugins != nil {
@@ -272,9 +303,10 @@ type Manager struct {
 	watcher *fsnotify.Watcher
 	done    chan struct{}
 
-	lastHash  [32]byte // SHA-256 hash of latest config content
-	closeOnce sync.Once
-	wg        sync.WaitGroup
+	lastHash          [32]byte // SHA-256 hash of latest config content
+	warnedFileRemoved bool     // file-missing warning already emitted (guarded by mu)
+	closeOnce         sync.Once
+	wg                sync.WaitGroup
 }
 
 // rebuildIndexesLocked rebuilds index maps for O(1) lookup.
@@ -331,3 +363,7 @@ func (m *Manager) GetConfig() *Config {
 	return m.atomicConfig.Load()
 }
 
+// ConfigPath returns the absolute or relative path of the managed config file.
+func (m *Manager) ConfigPath() string {
+	return m.configPath
+}

@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"net/http"
+
+	"github.com/haiser1/go-api-gateway/internal/config/validator"
 )
 
 // PluginMiddleware adalah interface untuk semua plugin
@@ -30,7 +32,11 @@ type PluginBuilder func(config map[string]interface{}) PluginMiddleware
 // pluginRegistry menyimpan semua plugin yang terdaftar
 var pluginRegistry = make(map[string]PluginBuilder)
 
-// RegisterPlugin mendaftarkan plugin builder dengan nama tertentu
+// RegisterPlugin mendaftarkan plugin builder dengan nama tertentu. Every
+// registered plugin name is simultaneously declared to the centralized
+// validator, which rejects configurations referencing plugins the runtime
+// does not ship (empty registry → validation stays lenient).
 func RegisterPlugin(name string, builder PluginBuilder) {
 	pluginRegistry[name] = builder
+	validator.RegisterKnownPlugin(name)
 }
