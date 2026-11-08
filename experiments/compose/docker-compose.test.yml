@@ -1,0 +1,77 @@
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: test-api-gateway
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - APP_ENV=production
+      - GOMAXPROCS=2
+      - GOMEMLIMIT=400MiB
+      - GATEWAY_ENV_FILE=/configs/.env
+    volumes:
+      - ${CONFIG_DIR:-../../configs}:/configs
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    cpuset: "0,1"
+    mem_limit: 512m
+    memswap_limit: 512m
+    restart: "no"
+    networks:
+      - test-net
+
+  mock-server:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.mock
+    container_name: test-mock-server
+    # Port 9090 deliberately NOT published to host (required by S12)
+    expose:
+      - "9090"
+    environment:
+      - GOMAXPROCS=1
+      - GOMEMLIMIT=200MiB
+      - PORT=9090
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    cpuset: "2"
+    mem_limit: 256m
+    memswap_limit: 256m
+    restart: "no"
+    networks:
+      - test-net
+
+  k6:
+    image: grafana/k6:latest
+    container_name: test-k6
+    profiles:
+      - loadtest
+    depends_on:
+      - gateway
+    environment:
+      - BASE_URL=http://gateway:8080
+      - GOMEMLIMIT=1600MiB
+    volumes:
+      - ../..:/workdir
+    working_dir: /workdir
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    cpuset: "3,4"
+    mem_limit: 2048m
+    memswap_limit: 2048m
+    networks:
+      - test-net
+
+networks:
+  test-net:
+    driver: bridge
+

@@ -31,11 +31,6 @@ global_plugins:
         exposed_headers:
             - X-Request-Id
         max_age: 86400
-    - name: auth
-      enabled: false
-      config:
-        type: jwt
-        alg: HS256
 upstreams:
     - id: upstream-mock-server
       name: mock-server-upstream

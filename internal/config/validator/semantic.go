@@ -138,6 +138,13 @@ func validateSemantics(cfg *config.Config) ValidationErrors {
 	globalPlugins := make(map[string]int, len(cfg.GlobalPlugins))
 	for i := range cfg.GlobalPlugins {
 		errs = append(errs, checkIdentity("GlobalPlugins", i, "name", cfg.GlobalPlugins[i].Name, globalPlugins)...)
+		if cfg.GlobalPlugins[i].Name == "auth" || cfg.GlobalPlugins[i].Name == "authorization" {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("GlobalPlugins[%d].Name", i),
+				Code:    CodeInvalidPluginConfig,
+				Message: "auth plugin is not allowed at global level; configure auth at service or route level",
+			})
+		}
 	}
 	errs = append(errs, validatePlugins(cfg.GlobalPlugins, "GlobalPlugins")...)
 

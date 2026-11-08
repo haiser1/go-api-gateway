@@ -375,10 +375,19 @@ func ResolveAuthConfig(cfg *Config) (*AuthConfig, error) {
 		return nil, nil
 	}
 
+	for _, plugin := range cfg.GlobalPlugins {
+		if plugin.Name == "auth" || plugin.Name == "authorization" {
+			return nil, errors.New("auth plugin is not allowed at global level; configure auth at service or route level")
+		}
+	}
+
 	var legacy *AuthConfig
 	collect := func(scope string, plugins []PluginConfig) error {
 		for _, plugin := range plugins {
 			if !plugin.Enabled || (plugin.Name != "auth" && plugin.Name != "authorization") {
+				continue
+			}
+			if len(plugin.Config) == 0 {
 				continue
 			}
 			parsed, err := AuthConfigFromPluginConfig(plugin.Config)
@@ -390,15 +399,12 @@ func ResolveAuthConfig(cfg *Config) (*AuthConfig, error) {
 				continue
 			}
 			if !authConfigsEqual(legacy, parsed) {
-				return fmt.Errorf("%s auth plugin conflicts with another auth plugin configuration; move auth to the top-level auth block", scope)
+				return fmt.Errorf("%s auth plugin conflicts with another auth plugin configuration; configure consistent credentials across services and routes", scope)
 			}
 		}
 		return nil
 	}
 
-	if err := collect("global", cfg.GlobalPlugins); err != nil {
-		return nil, err
-	}
 	for _, service := range cfg.Services {
 		if err := collect(fmt.Sprintf("service %q", service.Name), service.Plugins); err != nil {
 			return nil, err
@@ -411,8 +417,8 @@ func ResolveAuthConfig(cfg *Config) (*AuthConfig, error) {
 	}
 
 	if cfg.Auth != nil {
-		if legacy != nil {
-			return nil, errors.New("auth is configured both in the top-level auth block and as a plugin; remove one")
+		if legacy != nil && !authConfigsEqual(cfg.Auth, legacy) {
+			return nil, errors.New("auth is configured both in the top-level auth block and as a plugin with conflicting settings")
 		}
 		return cfg.Auth, nil
 	}

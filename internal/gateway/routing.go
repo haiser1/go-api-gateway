@@ -150,12 +150,6 @@ func buildRuntimeSnapshotWithProvider(cfg *config.Config, provider secrets.Provi
 
 		// Resolve Plugin Chain
 		resolvedPlugins := resolvePluginChain(route, service, cfg.GlobalPlugins)
-		if cfg.Auth != nil {
-			// Top-level auth applies to every route. Insert a synthetic auth
-			// plugin so it keeps its normal middleware priority position.
-			resolvedPlugins = append(resolvedPlugins, config.PluginConfig{Name: "auth", Enabled: true})
-			resolvedPlugins = sortPluginChain(resolvedPlugins)
-		}
 
 		// Get cached transport for this service and register it on the
 		// snapshot so the runtime stays self-contained.
@@ -396,6 +390,20 @@ func buildMiddlewareChain(rr *ResolvedRoute, authRuntime *auth.Runtime) http.Han
 		}
 		r.Header.Set("X-Forwarded-Host", r.Host)
 		r.Header.Set("X-Forwarded-Proto", proto)
+
+		// Sanitize & propagate identity headers (prevent identity spoofing)
+		if authCtx, ok := auth.FromContext(r.Context()); ok && authCtx != nil {
+			if authCtx.User != nil && authCtx.User.Subject != "" {
+				r.Header.Set("X-User-Id", authCtx.User.Subject)
+			} else if authCtx.Machine != nil && authCtx.Machine.APIKeyID != "" {
+				r.Header.Set("X-User-Id", authCtx.Machine.APIKeyID)
+			} else {
+				r.Header.Del("X-User-Id")
+			}
+		} else {
+			// Unauthenticated request: strip client-supplied identity header
+			r.Header.Del("X-User-Id")
+		}
 
 		if rr.Selector == nil || len(rr.TargetProxies) == 0 {
 			// Hand-built route without a selector (tests only) — nothing to

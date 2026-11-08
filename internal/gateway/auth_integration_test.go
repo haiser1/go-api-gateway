@@ -3,8 +3,10 @@ package gateway
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +35,7 @@ func gatewayTestToken(t *testing.T) string {
 func TestProxy_TopLevelAPIKeyAuth(t *testing.T) {
 	up := newEchoUpstream(t, "ok", nil, nil)
 	cfg := runtimeConfig(up.host, up.port, "/api/secure")
+	cfg.Routes[0].Plugins = []config.PluginConfig{{Name: "auth", Enabled: true}}
 	cfg.Auth = &config.AuthConfig{
 		Mode:   config.AuthModeAPIKey,
 		APIKey: &config.APIKeyAuthConfig{SecretRef: "API_KEY_HASH"},
@@ -67,6 +70,7 @@ func TestProxy_TopLevelAPIKeyAuth(t *testing.T) {
 func TestProxy_TopLevelJWTAuth(t *testing.T) {
 	up := newEchoUpstream(t, "ok", nil, nil)
 	cfg := runtimeConfig(up.host, up.port, "/api/secure")
+	cfg.Routes[0].Plugins = []config.PluginConfig{{Name: "auth", Enabled: true}}
 	cfg.Auth = &config.AuthConfig{
 		Mode: config.AuthModeJWT,
 		JWT:  &config.JWTAuthConfig{Alg: "HS256", HS256SecretRef: "JWT_HS256_SECRET"},
@@ -185,6 +189,7 @@ func TestProxy_AuthMissingSecretFailsBuild(t *testing.T) {
 func TestProxy_AuthReloadPicksUpNewSecret(t *testing.T) {
 	up := newEchoUpstream(t, "ok", nil, nil)
 	cfg := runtimeConfig(up.host, up.port, "/api/secure")
+	cfg.Routes[0].Plugins = []config.PluginConfig{{Name: "auth", Enabled: true}}
 	cfg.Auth = &config.AuthConfig{
 		Mode:   config.AuthModeAPIKey,
 		APIKey: &config.APIKeyAuthConfig{SecretRef: "API_KEY_HASH"},
@@ -225,6 +230,7 @@ func TestProxy_AuthReloadPicksUpNewSecret(t *testing.T) {
 func TestProxy_AuthEnvFileReloadIsAtomic(t *testing.T) {
 	up := newEchoUpstream(t, "ok", nil, nil)
 	cfg := runtimeConfig(up.host, up.port, "/api/secure")
+	cfg.Routes[0].Plugins = []config.PluginConfig{{Name: "auth", Enabled: true}}
 	cfg.Auth = &config.AuthConfig{
 		Mode:   config.AuthModeAPIKey,
 		APIKey: &config.APIKeyAuthConfig{SecretRef: "API_KEY_HASH"},
@@ -305,6 +311,7 @@ func TestProxy_AuthEnvFileReloadIsAtomic(t *testing.T) {
 func TestServer_SecretWatcherReloadsEnvKeys(t *testing.T) {
 	up := newEchoUpstream(t, "ok", nil, nil)
 	cfg := runtimeConfig(up.host, up.port, "/api/secure")
+	cfg.Routes[0].Plugins = []config.PluginConfig{{Name: "auth", Enabled: true}}
 	cfg.Auth = &config.AuthConfig{
 		Mode:   config.AuthModeAPIKey,
 		APIKey: &config.APIKeyAuthConfig{SecretRef: "API_KEY_HASH"},
@@ -379,5 +386,167 @@ func TestServer_SecretWatcherReloadsEnvKeys(t *testing.T) {
 	}
 	if code := request("watcher-key-2"); code != http.StatusOK {
 		t.Fatalf("new key status = %d, want 200", code)
+	}
+}
+
+func TestProxy_ServiceLevelAuthInheritanceAndRouteOverride(t *testing.T) {
+	up := newEchoUpstream(t, "ok", nil, nil)
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{ProxyPort: 8080, AdminPort: 8081},
+		Auth: &config.AuthConfig{
+			Mode:   config.AuthModeAPIKey,
+			APIKey: &config.APIKeyAuthConfig{SecretRef: "API_KEY_HASH"},
+		},
+		Upstreams: []config.Upstream{{
+			Id: "u-test", Name: "upstream-test", Algorithm: "round-robin",
+			Targets: []config.UpstreamTarget{{Host: up.host, Port: up.port, Weight: 1}},
+		}},
+		Services: []config.Service{
+			{
+				Id: "s-secured", Name: "secured-service", UpstreamId: "u-test", Protocol: "http",
+				Plugins: []config.PluginConfig{{Name: "auth", Enabled: true}},
+			},
+			{
+				Id: "s-public", Name: "public-service", UpstreamId: "u-test", Protocol: "http",
+			},
+		},
+		Routes: []config.Route{
+			// r-inherited: inherits auth from s-secured
+			{Id: "r-inherited", Name: "inherited-route", ServiceId: "s-secured", Methods: []string{"GET"}, Paths: []string{"/api/secured/data"}},
+			// r-override-open: overrides s-secured with auth.enabled = false
+			{
+				Id: "r-override-open", Name: "override-open-route", ServiceId: "s-secured", Methods: []string{"GET"}, Paths: []string{"/api/secured/health"},
+				Plugins: []config.PluginConfig{{Name: "auth", Enabled: false}},
+			},
+			// r-public: under public service without auth
+			{Id: "r-public", Name: "public-route", ServiceId: "s-public", Methods: []string{"GET"}, Paths: []string{"/public"}},
+			// r-route-auth: under public service but route enables auth
+			{
+				Id: "r-route-auth", Name: "route-auth", ServiceId: "s-public", Methods: []string{"GET"}, Paths: []string{"/public/protected"},
+				Plugins: []config.PluginConfig{{Name: "auth", Enabled: true}},
+			},
+		},
+	}
+
+	provider := secrets.NewMapProvider(map[string]string{
+		"API_KEY_HASH": secrets.HashSecret("secret-key"),
+	})
+
+	proxy, err := NewProxyWithSecrets(cfg, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	call := func(path, key string) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if key != "" {
+			req.Header.Set("X-API-Key", key)
+		}
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// 1. Inherited route requires auth
+	if code := call("/api/secured/data", ""); code != http.StatusUnauthorized {
+		t.Fatalf("/api/secured/data without key = %d, want 401", code)
+	}
+	if code := call("/api/secured/data", "secret-key"); code != http.StatusOK {
+		t.Fatalf("/api/secured/data with key = %d, want 200", code)
+	}
+
+	// 2. Overridden route with auth enabled=false is public
+	if code := call("/api/secured/health", ""); code != http.StatusOK {
+		t.Fatalf("/api/secured/health without key = %d, want 200", code)
+	}
+
+	// 3. Route under public service is public
+	if code := call("/public", ""); code != http.StatusOK {
+		t.Fatalf("/public without key = %d, want 200", code)
+	}
+
+	// 4. Route-level auth under public service requires auth
+	if code := call("/public/protected", ""); code != http.StatusUnauthorized {
+		t.Fatalf("/public/protected without key = %d, want 401", code)
+	}
+	if code := call("/public/protected", "secret-key"); code != http.StatusOK {
+		t.Fatalf("/public/protected with key = %d, want 200", code)
+	}
+}
+
+func TestProxy_IdentityHeaderSanitizationAndPropagation(t *testing.T) {
+	var receivedUserID string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedUserID = r.Header.Get("X-User-Id")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	u, _ := url.Parse(ts.URL)
+	port, _ := strconv.Atoi(u.Port())
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{ProxyPort: 8080, AdminPort: 8081},
+		Auth: &config.AuthConfig{
+			Mode:   config.AuthModeBoth,
+			APIKey: &config.APIKeyAuthConfig{SecretRef: "API_KEY_HASH"},
+			JWT:    &config.JWTAuthConfig{Alg: "HS256", HS256SecretRef: "JWT_HS256_SECRET"},
+		},
+		Upstreams: []config.Upstream{{
+			Id: "u-echo", Name: "upstream-echo", Algorithm: "round-robin",
+			Targets: []config.UpstreamTarget{{Host: u.Hostname(), Port: port, Weight: 1}},
+		}},
+		Services: []config.Service{
+			{Id: "s-echo", Name: "echo-service", UpstreamId: "u-echo", Protocol: "http"},
+		},
+		Routes: []config.Route{
+			{
+				Id: "r-open", Name: "open-route", ServiceId: "s-echo", Methods: []string{"GET"}, Paths: []string{"/open"},
+			},
+			{
+				Id: "r-protected", Name: "protected-route", ServiceId: "s-echo", Methods: []string{"GET"}, Paths: []string{"/protected"},
+				Plugins: []config.PluginConfig{{Name: "auth", Enabled: true}},
+			},
+		},
+	}
+
+	provider := secrets.NewMapProvider(map[string]string{
+		"API_KEY_HASH":     secrets.HashSecret("api-key-123"),
+		"JWT_HS256_SECRET": gatewayTestHSSecret,
+	})
+
+	proxy, err := NewProxyWithSecrets(cfg, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Case 1: Unauthenticated request sends spoofed X-User-Id -> must be stripped!
+	receivedUserID = "sentinel"
+	req := httptest.NewRequest(http.MethodGet, "/open", nil)
+	req.Header.Set("X-User-Id", "spoofed-admin-id")
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("open route returned %d", rec.Code)
+	}
+	if receivedUserID != "" {
+		t.Fatalf("unauthenticated request: upstream received X-User-Id %q, want empty (stripped)", receivedUserID)
+	}
+
+	// Case 2: Authenticated request with JWT sends spoofed X-User-Id -> must be overwritten by JWT subject!
+	receivedUserID = "sentinel"
+	req = httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("X-API-Key", "api-key-123")
+	req.Header.Set("Authorization", "Bearer "+gatewayTestToken(t)) // gatewayTestToken has sub: "user-1"
+	req.Header.Set("X-User-Id", "spoofed-admin-id")
+	rec = httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("protected route returned %d: %s", rec.Code, rec.Body.String())
+	}
+	if receivedUserID != "user-1" {
+		t.Fatalf("authenticated request: upstream received X-User-Id %q, want %q", receivedUserID, "user-1")
 	}
 }

@@ -20,6 +20,12 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/api/v1/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(mockResponse)
+	})
+
 	mux.HandleFunc("/mock", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

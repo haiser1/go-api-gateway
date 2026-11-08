@@ -172,22 +172,33 @@ func TestValidate_PluginContracts(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := fullConfig()
-			cfg.GlobalPlugins = []config.PluginConfig{{Name: tc.pluginName, Enabled: true, Config: tc.cfgMap}}
+			cfg.Routes[0].Plugins = []config.PluginConfig{{Name: tc.pluginName, Enabled: true, Config: tc.cfgMap}}
 			assertHave(t, Validate(cfg), tc.code, "")
 		})
 	}
 
-	// The same keys with correct types must pass.
+	// Global auth must be rejected.
+	t.Run("global auth rejected", func(t *testing.T) {
+		cfg := fullConfig()
+		cfg.GlobalPlugins = []config.PluginConfig{
+			{Name: "auth", Enabled: true, Config: map[string]interface{}{"type": "jwt", "alg": "HS256", "jwt_secret_ref": "JWT_SECRET"}},
+		}
+		assertHave(t, Validate(cfg), CodeInvalidPluginConfig, "")
+	})
+
+	// The same keys with correct types must pass at route/service level.
 	t.Run("correct plugin configs pass", func(t *testing.T) {
 		cfg := fullConfig()
 		cfg.GlobalPlugins = []config.PluginConfig{
 			{Name: "rate-limiting", Enabled: true, Config: map[string]interface{}{"requests_per_minute": 60}},
-			{Name: "auth", Enabled: true, Config: map[string]interface{}{"type": "jwt", "alg": "HS256", "jwt_secret_ref": "JWT_SECRET"}},
 			{Name: "cors", Enabled: true, Config: map[string]interface{}{"allowed_origins": []interface{}{"http://x.com"}, "max_age": 100}},
 			{Name: "ip-restriction", Enabled: true, Config: map[string]interface{}{"status_code": 403}},
 			{Name: "bot-detection", Enabled: true, Config: map[string]interface{}{"blocked_bots": []string{"sqlmap"}}},
 			{Name: "request-transform", Enabled: true, Config: map[string]interface{}{"add_headers": map[string]string{"X-A": "b"}}},
 			{Name: "metrics", Enabled: true, Config: map[string]interface{}{"record_query": true}},
+		}
+		cfg.Routes[0].Plugins = []config.PluginConfig{
+			{Name: "auth", Enabled: true, Config: map[string]interface{}{"type": "jwt", "alg": "HS256", "jwt_secret_ref": "JWT_SECRET"}},
 		}
 		assertNoErrors(t, Validate(cfg))
 	})
