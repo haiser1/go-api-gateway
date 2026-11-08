@@ -3,22 +3,43 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/haiser1/go-api-gateway/internal/config"
+	"github.com/haiser1/go-api-gateway/internal/config/validator"
 	"github.com/haiser1/go-api-gateway/internal/domain"
 	"github.com/haiser1/go-api-gateway/internal/helper"
+	"github.com/haiser1/go-api-gateway/internal/secrets"
 	"github.com/julienschmidt/httprouter"
 )
+
+// decodeAndValidate decodes a JSON request body and runs the centralized
+// structural DTO validation (validate tags). On any problem it responds with
+// 400 and returns false; the handler should stop.
+func decodeAndValidate(w http.ResponseWriter, r *http.Request, v interface{}) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+		return false
+	}
+	if errs := validator.ValidateStruct(v); len(errs) > 0 {
+		helper.RespondError(w, http.StatusBadRequest, "Validation failed", errs)
+		return false
+	}
+	return true
+}
 
 // ManagementHandler menampung logika untuk API manajemen
 type ManagementHandler struct {
 	Manager                *config.Manager
+	SecretProvider         secrets.Provider
 	StartTime              time.Time
 	GetCircuitBreakerStats func(serviceId string) (state string, failures int, lastFailure time.Time)
 	ResetCircuitBreaker    func(serviceId string)
 	ResetMetrics           func()
+
+	authMu sync.Mutex
 }
 
 // --- HELPER UNTUK KONVERSI DTO ---
@@ -138,12 +159,7 @@ func (h *ManagementHandler) GetUpstreamById(w http.ResponseWriter, r *http.Reque
 
 func (h *ManagementHandler) AddUpstream(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.AddUpstreamRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
-		return
-	}
-	if req.Name == "" || len(req.Targets) == 0 {
-		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, targets", nil)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	newUpstream := dtoToConfigUpstream(req)
@@ -157,8 +173,7 @@ func (h *ManagementHandler) AddUpstream(w http.ResponseWriter, r *http.Request, 
 func (h *ManagementHandler) UpdateUpstream(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	upstreamId := ps.ByName("upstreamId")
 	var req domain.UpdateUpstreamRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -209,12 +224,7 @@ func (h *ManagementHandler) GetGlobalPlugins(w http.ResponseWriter, r *http.Requ
 
 func (h *ManagementHandler) AddGlobalPlugin(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.Plugin
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
-		return
-	}
-	if req.Name == "" {
-		helper.RespondError(w, http.StatusBadRequest, "Plugin name required", nil)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -235,6 +245,10 @@ func (h *ManagementHandler) UpdateGlobalPlugin(w http.ResponseWriter, r *http.Re
 	}
 	if req.Name == "" {
 		req.Name = pluginName // Pastikan nama konsisten
+	}
+	if errs := validator.ValidateStruct(&req); len(errs) > 0 {
+		helper.RespondError(w, http.StatusBadRequest, "Validation failed", errs)
+		return
 	}
 
 	plugin := dtoToConfigPlugin(req)
@@ -321,12 +335,7 @@ func (h *ManagementHandler) GetServiceById(w http.ResponseWriter, r *http.Reques
 
 func (h *ManagementHandler) AddService(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.AddServiceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
-		return
-	}
-	if req.Name == "" || req.UpstreamId == "" {
-		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, upstream_id", nil)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	newService := dtoToConfigService(req)
@@ -340,8 +349,7 @@ func (h *ManagementHandler) AddService(w http.ResponseWriter, r *http.Request, _
 func (h *ManagementHandler) UpdateService(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	serviceId := ps.ByName("serviceId")
 	var req domain.UpdateServiceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -433,12 +441,7 @@ func (h *ManagementHandler) GetRouteById(w http.ResponseWriter, r *http.Request,
 
 func (h *ManagementHandler) AddRoute(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.AddRouteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
-		return
-	}
-	if req.Name == "" || len(req.Paths) == 0 || len(req.Methods) == 0 || req.ServiceId == "" {
-		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, methods, paths, serviceId", nil)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	newRoute := dtoToConfigRoute(req)
@@ -452,12 +455,7 @@ func (h *ManagementHandler) AddRoute(w http.ResponseWriter, r *http.Request, _ h
 func (h *ManagementHandler) UpdateRoute(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	routeId := ps.ByName("routeId")
 	var req domain.UpdateRouteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
-		return
-	}
-	if req.Name == "" || len(req.Paths) == 0 || len(req.Methods) == 0 || req.ServiceId == "" {
-		helper.RespondError(w, http.StatusBadRequest, "Missing required fields: name, methods, paths, serviceId", nil)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -536,6 +534,10 @@ func (h *ManagementHandler) UpdatePluginInService(w http.ResponseWriter, r *http
 	if req.Name == "" {
 		req.Name = pluginName
 	}
+	if errs := validator.ValidateStruct(&req); len(errs) > 0 {
+		helper.RespondError(w, http.StatusBadRequest, "Validation failed", errs)
+		return
+	}
 	plugin := dtoToConfigPlugin(req)
 	if err := h.Manager.UpdatePluginInService(serviceId, pluginName, plugin); err != nil {
 		helper.RespondError(w, http.StatusNotFound, "Failed to update plugin", err)
@@ -597,6 +599,10 @@ func (h *ManagementHandler) UpdatePluginInRoute(w http.ResponseWriter, r *http.R
 	}
 	if req.Name == "" {
 		req.Name = pluginName
+	}
+	if errs := validator.ValidateStruct(&req); len(errs) > 0 {
+		helper.RespondError(w, http.StatusBadRequest, "Validation failed", errs)
+		return
 	}
 	plugin := dtoToConfigPlugin(req)
 	if err := h.Manager.UpdatePluginInRoute(routeId, pluginName, plugin); err != nil {
@@ -715,8 +721,7 @@ func (h *ManagementHandler) GetCORSConfig(w http.ResponseWriter, r *http.Request
 
 func (h *ManagementHandler) AddCORSConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.CORSConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -730,8 +735,7 @@ func (h *ManagementHandler) AddCORSConfig(w http.ResponseWriter, r *http.Request
 
 func (h *ManagementHandler) UpdateCORSConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.CORSConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -774,8 +778,7 @@ func (h *ManagementHandler) GetServiceCORSConfig(w http.ResponseWriter, r *http.
 func (h *ManagementHandler) AddServiceCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	serviceId := ps.ByName("serviceId")
 	var req domain.CORSConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -790,8 +793,7 @@ func (h *ManagementHandler) AddServiceCORSConfig(w http.ResponseWriter, r *http.
 func (h *ManagementHandler) UpdateServiceCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	serviceId := ps.ByName("serviceId")
 	var req domain.CORSConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -835,8 +837,7 @@ func (h *ManagementHandler) GetRouteCORSConfig(w http.ResponseWriter, r *http.Re
 func (h *ManagementHandler) AddRouteCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	routeId := ps.ByName("routeId")
 	var req domain.CORSConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -851,8 +852,7 @@ func (h *ManagementHandler) AddRouteCORSConfig(w http.ResponseWriter, r *http.Re
 func (h *ManagementHandler) UpdateRouteCORSConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	routeId := ps.ByName("routeId")
 	var req domain.CORSConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -977,8 +977,7 @@ func (h *ManagementHandler) GetIPRestrictionConfig(w http.ResponseWriter, r *htt
 
 func (h *ManagementHandler) AddIPRestrictionConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.IPRestrictionConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.AddGlobalPlugin(ipRestrictionToPlugin(req)); err != nil {
@@ -990,8 +989,7 @@ func (h *ManagementHandler) AddIPRestrictionConfig(w http.ResponseWriter, r *htt
 
 func (h *ManagementHandler) UpdateIPRestrictionConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.IPRestrictionConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.UpdateGlobalPlugin("ip-restriction", ipRestrictionToPlugin(req)); err != nil {
@@ -1030,8 +1028,7 @@ func (h *ManagementHandler) GetServiceIPRestrictionConfig(w http.ResponseWriter,
 func (h *ManagementHandler) AddServiceIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	serviceId := ps.ByName("serviceId")
 	var req domain.IPRestrictionConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.AddPluginToService(serviceId, ipRestrictionToPlugin(req)); err != nil {
@@ -1044,8 +1041,7 @@ func (h *ManagementHandler) AddServiceIPRestrictionConfig(w http.ResponseWriter,
 func (h *ManagementHandler) UpdateServiceIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	serviceId := ps.ByName("serviceId")
 	var req domain.IPRestrictionConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.UpdatePluginInService(serviceId, "ip-restriction", ipRestrictionToPlugin(req)); err != nil {
@@ -1085,8 +1081,7 @@ func (h *ManagementHandler) GetRouteIPRestrictionConfig(w http.ResponseWriter, r
 func (h *ManagementHandler) AddRouteIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	routeId := ps.ByName("routeId")
 	var req domain.IPRestrictionConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.AddPluginToRoute(routeId, ipRestrictionToPlugin(req)); err != nil {
@@ -1099,8 +1094,7 @@ func (h *ManagementHandler) AddRouteIPRestrictionConfig(w http.ResponseWriter, r
 func (h *ManagementHandler) UpdateRouteIPRestrictionConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	routeId := ps.ByName("routeId")
 	var req domain.IPRestrictionConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.UpdatePluginInRoute(routeId, "ip-restriction", ipRestrictionToPlugin(req)); err != nil {
@@ -1165,8 +1159,7 @@ func (h *ManagementHandler) GetRequestTransformConfig(w http.ResponseWriter, r *
 
 func (h *ManagementHandler) AddRequestTransformConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.RequestTransformConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.AddGlobalPlugin(requestTransformToPlugin(req)); err != nil {
@@ -1178,8 +1171,7 @@ func (h *ManagementHandler) AddRequestTransformConfig(w http.ResponseWriter, r *
 
 func (h *ManagementHandler) UpdateRequestTransformConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var req domain.RequestTransformConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.UpdateGlobalPlugin("request-transform", requestTransformToPlugin(req)); err != nil {
@@ -1218,8 +1210,7 @@ func (h *ManagementHandler) GetServiceRequestTransformConfig(w http.ResponseWrit
 func (h *ManagementHandler) AddServiceRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	serviceId := ps.ByName("serviceId")
 	var req domain.RequestTransformConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.AddPluginToService(serviceId, requestTransformToPlugin(req)); err != nil {
@@ -1232,8 +1223,7 @@ func (h *ManagementHandler) AddServiceRequestTransformConfig(w http.ResponseWrit
 func (h *ManagementHandler) UpdateServiceRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	serviceId := ps.ByName("serviceId")
 	var req domain.RequestTransformConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.UpdatePluginInService(serviceId, "request-transform", requestTransformToPlugin(req)); err != nil {
@@ -1273,8 +1263,7 @@ func (h *ManagementHandler) GetRouteRequestTransformConfig(w http.ResponseWriter
 func (h *ManagementHandler) AddRouteRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	routeId := ps.ByName("routeId")
 	var req domain.RequestTransformConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.AddPluginToRoute(routeId, requestTransformToPlugin(req)); err != nil {
@@ -1287,8 +1276,7 @@ func (h *ManagementHandler) AddRouteRequestTransformConfig(w http.ResponseWriter
 func (h *ManagementHandler) UpdateRouteRequestTransformConfig(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	routeId := ps.ByName("routeId")
 	var req domain.RequestTransformConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "Invalid request body", err)
+	if !decodeAndValidate(w, r, &req) {
 		return
 	}
 	if err := h.Manager.UpdatePluginInRoute(routeId, "request-transform", requestTransformToPlugin(req)); err != nil {
@@ -1378,7 +1366,8 @@ func (h *ManagementHandler) ResetServiceCircuitBreaker(w http.ResponseWriter, r 
 }
 
 func (h *ManagementHandler) GetFullConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	cfg := h.Manager.GetConfig()
+	cfg := h.Manager.GetConfig().DeepCopy()
+	redactConfig(cfg)
 	helper.RespondSuccess(w, http.StatusOK, "Full configuration fetched successfully", cfg)
 }
 

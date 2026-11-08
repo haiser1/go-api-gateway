@@ -49,7 +49,7 @@ func setupTestRouter(t *testing.T) (*httprouter.Router, *config.Manager, string)
 	}
 
 	router := httprouter.New()
-	gateway.RegisterManagementRoutes(router, manager)
+	gateway.RegisterManagementRoutes(router, manager, nil)
 
 	return router, manager, tmpDir
 }

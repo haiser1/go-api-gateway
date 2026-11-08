@@ -69,9 +69,6 @@ func (m *Manager) AddRoute(r Route) error {
 	newCfg := m.config.DeepCopy()
 	newCfg.Routes = append(newCfg.Routes, r)
 
-	// Provision .env secrets when the route embeds the auth plugin
-	m.ensureAuthEnvForPluginsLocked(r.Plugins)
-
 	err := m.commitConfigLocked(newCfg)
 	if err == nil {
 		log.Info().Str("route_id", r.Id).Str("route_name", r.Name).Msg("Route added")

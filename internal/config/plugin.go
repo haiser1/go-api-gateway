@@ -2,49 +2,13 @@ package config
 
 import (
 	"fmt"
-	"path/filepath"
 
-	"github.com/haiser1/go-api-gateway/internal/secret"
 	"github.com/rs/zerolog/log"
 )
 
 // ========================================================
 // PENGELOLAAN PLUGIN (CRUD)
 // ========================================================
-
-// isAuthPlugin reports whether the plugin name refers to the auth plugin
-// (supported under both of its registry names).
-func isAuthPlugin(name string) bool {
-	return name == "auth" || name == "authorization"
-}
-
-// ensureAuthEnvFileLocked provisions the .env secret file next to config.yaml
-// when an auth plugin is added. The file holds API_KEY_SECRET and JWT_SECRET.
-// Caller must ALREADY HOLD m.mu.
-func (m *Manager) ensureAuthEnvFileLocked() {
-	envPath := filepath.Join(filepath.Dir(m.configPath), ".env")
-	created, err := secret.EnsureEnvFile(envPath)
-	if err != nil {
-		log.Warn().Err(err).Str("path", envPath).
-			Msg("Failed to provision .env secret file for auth plugin")
-		return
-	}
-	if created {
-		log.Info().Str("path", envPath).
-			Msg("Auth plugin added: .env created with generated API_KEY_SECRET and JWT_SECRET")
-	}
-}
-
-// ensureAuthEnvForPluginsLocked provisions the .env file if the given plugin
-// list contains the auth plugin. Caller must ALREADY HOLD m.mu.
-func (m *Manager) ensureAuthEnvForPluginsLocked(plugins []PluginConfig) {
-	for i := range plugins {
-		if isAuthPlugin(plugins[i].Name) {
-			m.ensureAuthEnvFileLocked()
-			return
-		}
-	}
-}
 
 // --- Plugin Global ---
 
@@ -61,10 +25,6 @@ func (m *Manager) AddGlobalPlugin(p PluginConfig) error {
 
 	newCfg := m.config.DeepCopy()
 	newCfg.GlobalPlugins = append(newCfg.GlobalPlugins, p)
-
-	if isAuthPlugin(p.Name) {
-		m.ensureAuthEnvFileLocked()
-	}
 
 	err := m.commitConfigLocked(newCfg)
 	if err == nil {
@@ -145,10 +105,6 @@ func (m *Manager) AddPluginToService(serviceId string, p PluginConfig) error {
 	}
 	if !serviceFound {
 		return fmt.Errorf("service dengan ID '%s' tidak ditemukan", serviceId)
-	}
-
-	if isAuthPlugin(p.Name) {
-		m.ensureAuthEnvFileLocked()
 	}
 
 	err := m.commitConfigLocked(newCfg)
@@ -252,10 +208,6 @@ func (m *Manager) AddPluginToRoute(routeId string, p PluginConfig) error {
 	}
 	if !routeFound {
 		return fmt.Errorf("route dengan ID '%s' tidak ditemukan", routeId)
-	}
-
-	if isAuthPlugin(p.Name) {
-		m.ensureAuthEnvFileLocked()
 	}
 
 	err := m.commitConfigLocked(newCfg)
