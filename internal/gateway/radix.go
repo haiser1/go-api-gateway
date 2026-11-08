@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -171,30 +172,69 @@ func (t *RadixTree) Insert(method, path string, route *ResolvedRoute) error {
 // The params map is lazily allocated — zero allocations for static-only routes.
 func (t *RadixTree) Search(method, path string) (*ResolvedRoute, map[string]string) {
 	var params map[string]string
-	route := t.searchIterative(method, path, &params)
+	route := t.searchNode(t.root, method, strings.TrimLeft(path, "/"), &params, nil)
 	if route != nil {
 		return route, params
 	}
 	return nil, nil
 }
 
-// searchIterative walks the tree segment by segment without allocating a []string.
-// It uses an iterative approach for static/param segments and only recurses
-// for backtracking when a static match fails and a param fallback is needed.
-func (t *RadixTree) searchIterative(method, path string, params *map[string]string) *ResolvedRoute {
-	path = strings.TrimLeft(path, "/")
-	return t.searchNode(t.root, method, path, params)
+// SearchWithAllowed behaves like Search, but additionally collects the
+// registered methods for the matched path when the requested method is not
+// registered on it (HTTP 405 support). The methods slice is sorted so the
+// Allow header is deterministic.
+//
+// allowed is nil when a route matched (hot path: no extra work, no
+// allocations) AND when the path itself does not exist at all (404 case —
+// a 405 would be wrong for an unknown resource).
+func (t *RadixTree) SearchWithAllowed(method, path string) (*ResolvedRoute, map[string]string, []string) {
+	var params map[string]string
+	var allowed map[string]struct{}
+	route := t.searchNode(t.root, method, strings.TrimLeft(path, "/"), &params, &allowed)
+	if route != nil {
+		return route, params, nil
+	}
+	if len(allowed) == 0 {
+		return nil, nil, nil
+	}
+	methods := make([]string, 0, len(allowed))
+	for m := range allowed {
+		methods = append(methods, m)
+	}
+	sort.Strings(methods)
+	return nil, nil, methods
+}
+
+// collectAllowed records every alternative method registered on a terminal
+// node that was reached with an unmatched method. The collector is only
+// active when the caller passed a non-nil allowed set (SearchWithAllowed);
+// the plain Search hot path forwards nil, making collection a no-op.
+func collectAllowed(handlers map[string]*ResolvedRoute, allowed *map[string]struct{}) {
+	if allowed == nil {
+		return
+	}
+	if *allowed == nil {
+		*allowed = make(map[string]struct{}, len(handlers))
+	}
+	for method := range handlers {
+		(*allowed)[method] = struct{}{}
+	}
 }
 
 // searchNode performs the recursive search from a given node.
 // remaining is the un-consumed portion of the URL path (without leading slash).
-func (t *RadixTree) searchNode(node *radixNode, method, remaining string, params *map[string]string) *ResolvedRoute {
+// allowed (optional) collects candidate methods for 405 responses; pass nil
+// on the hot path to skip collection entirely.
+func (t *RadixTree) searchNode(node *radixNode, method, remaining string, params *map[string]string, allowed *map[string]struct{}) *ResolvedRoute {
 	// Base case: all segments consumed
 	if remaining == "" {
 		if node.handlers != nil {
 			if route, ok := node.handlers[method]; ok {
 				return route
 			}
+			// The path exists but this method is not registered on it —
+			// remember the alternatives for the 405 + Allow response.
+			collectAllowed(node.handlers, allowed)
 		}
 		return nil
 	}
@@ -206,13 +246,13 @@ func (t *RadixTree) searchNode(node *radixNode, method, remaining string, params
 	if child := node.findStaticChildForSearch(seg); child != nil {
 		if child.path == seg {
 			// Exact match on this segment
-			if result := t.searchNode(child, method, rest, params); result != nil {
+			if result := t.searchNode(child, method, rest, params, allowed); result != nil {
 				return result
 			}
 		} else if strings.HasPrefix(seg, child.path) {
 			// The child's path is a prefix of our segment — continue matching
 			innerRemaining := seg[len(child.path):]
-			if result := t.searchCompressedNode(child, innerRemaining, method, rest, params); result != nil {
+			if result := t.searchCompressedNode(child, innerRemaining, method, rest, params, allowed); result != nil {
 				return result
 			}
 		}
@@ -225,7 +265,7 @@ func (t *RadixTree) searchNode(node *radixNode, method, remaining string, params
 			*params = make(map[string]string)
 		}
 		(*params)[node.paramChild.paramName] = seg
-		if result := t.searchNode(node.paramChild, method, rest, params); result != nil {
+		if result := t.searchNode(node.paramChild, method, rest, params, allowed); result != nil {
 			return result
 		}
 		// Backtrack: remove param if this path didn't work
@@ -243,6 +283,9 @@ func (t *RadixTree) searchNode(node *radixNode, method, remaining string, params
 			if route, ok := node.wildcardChild.handlers[method]; ok {
 				return route
 			}
+			// Wildcard terminal reached — treat it like the base case for
+			// 405 method collection.
+			collectAllowed(node.wildcardChild.handlers, allowed)
 		}
 		// Backtrack
 		delete(*params, node.wildcardChild.wildcardName)
@@ -253,16 +296,16 @@ func (t *RadixTree) searchNode(node *radixNode, method, remaining string, params
 
 // searchCompressedNode handles the case where a radix node's path is a compressed
 // prefix and we need to continue matching within the same segment.
-func (t *RadixTree) searchCompressedNode(node *radixNode, innerRemaining, method, rest string, params *map[string]string) *ResolvedRoute {
+func (t *RadixTree) searchCompressedNode(node *radixNode, innerRemaining, method, rest string, params *map[string]string, allowed *map[string]struct{}) *ResolvedRoute {
 	if innerRemaining == "" {
-		return t.searchNode(node, method, rest, params)
+		return t.searchNode(node, method, rest, params, allowed)
 	}
 
 	if child := node.findStaticChildForSearch(innerRemaining); child != nil {
 		if child.path == innerRemaining {
-			return t.searchNode(child, method, rest, params)
+			return t.searchNode(child, method, rest, params, allowed)
 		} else if strings.HasPrefix(innerRemaining, child.path) {
-			return t.searchCompressedNode(child, innerRemaining[len(child.path):], method, rest, params)
+			return t.searchCompressedNode(child, innerRemaining[len(child.path):], method, rest, params, allowed)
 		}
 	}
 

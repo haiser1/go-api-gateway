@@ -2,19 +2,15 @@ package gateway
 
 import (
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"testing"
 )
 
-// helper to create a minimal ResolvedRoute for testing
+// helper to create a minimal ResolvedRoute for testing (no selector — these
+// tests only exercise tree insertion/lookup, never the proxy handler)
 func makeRoute(method, path string) *ResolvedRoute {
-	u, _ := url.Parse("http://localhost:8080")
 	return &ResolvedRoute{
-		Method:       method,
-		PathPattern:  path,
-		TargetURL:    u,
-		ProxyHandler: httputil.NewSingleHostReverseProxy(u),
+		Method:      method,
+		PathPattern: path,
 	}
 }
 
@@ -27,11 +23,11 @@ func TestRadixTree_StaticRoutes(t *testing.T) {
 	tree.Insert("GET", "/health", makeRoute("GET", "/health"))
 
 	tests := []struct {
-		name       string
-		method     string
-		path       string
-		wantMatch  bool
-		wantPath   string
+		name      string
+		method    string
+		path      string
+		wantMatch bool
+		wantPath  string
 	}{
 		{"GET /api/users", "GET", "/api/users", true, "/api/users"},
 		{"POST /api/users", "POST", "/api/users", true, "/api/users"},
