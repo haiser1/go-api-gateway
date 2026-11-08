@@ -4,3 +4,5 @@ performance/*.json
 /summary.json
 /breaking_point.json
 .agents/
+/docs/specs/implementation-plan-test.md
+/docs/specs/implementation-plan.md

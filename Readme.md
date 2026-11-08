@@ -98,7 +98,7 @@ Once merged, enabled plugins are pre-compiled in deterministic execution order:
 3. `logger` / `logging` (Priority `2`)
 4. `ip-restriction` / `bot-detection` (Priority `3`)
 5. `rate-limiting` (Priority `4`)
-6. `authorization` (Priority `5`)
+6. `auth` (Priority `5`, compiled from the top-level `auth` block)
 7. `request-transform` / `request-transformation` (Priority `6`)
 
 ## Features
@@ -109,7 +109,7 @@ Once merged, enabled plugins are pre-compiled in deterministic execution order:
 | **Circuit Breaker** | Lock-free fast path, per-service state machine (Closed → Open → HalfOpen) |
 | **Connection Pooling** | Per-service HTTP transport with configurable pool sizes and HTTP/2 support |
 | **Plugin System** | Composable middleware — pre-compiled at config load, zero alloc per-request |
-| **Built-in Plugins** | CORS, In-Memory Metrics (Prometheus/JSON), IP Restriction & Bot Detection, Request/Response Transform, JWT Auth, Rate Limiting, Structured Logging |
+| **Built-in Plugins** | CORS, In-Memory Metrics (Prometheus/JSON), IP Restriction & Bot Detection, Request/Response Transform, API-key/JWT Auth, Rate Limiting, Structured Logging |
 | **Hot Reload** | Config changes via fsnotify trigger atomic route table swap (no downtime) |
 | **Management API** | Full CRUD REST API for upstreams, services, routes, CORS, and plugins |
 | **Duplicate Detection** | Route conflict validation at config, management API, and radix tree layers |
@@ -137,9 +137,11 @@ go-api-gateway/
 │   │   ├── plugin.go             # Plugin registry and interface
 │   │   ├── routes.go             # Admin Management API route definitions
 │   │   └── server.go             # Dual-server bootstrap (proxy + admin)
+│   ├── auth/                     # Compiled auth runtime, verifiers, middleware
+│   ├── secrets/                  # Secret provider abstraction + atomic .env store
 │   ├── handler/                  # Management API handlers (REST CRUD)
 │   ├── middleware/               # Built-in plugins
-│   │   ├── auth.go               # JWT authentication
+│   │   ├── auth.go               # Legacy auth shim (fails closed)
 │   │   ├── cors.go               # Cross-Origin Resource Sharing (CORS)
 │   │   ├── ip_restriction.go     # IP/CIDR allowlist, denylist, and bot User-Agent blocking
 │   │   ├── logger.go             # Structured request logging (zerolog)
@@ -199,6 +201,20 @@ server:
   admin_port: 8081      # Management API & /metrics
   log_level: info
 
+auth:
+  mode: both              # api_key | jwt | both
+  api_key:
+    header: X-API-Key
+    secret_ref: API_KEY_HASH
+  jwt:
+    alg: HS256            # HS256 | RS256
+    authorization_header: Authorization
+    hs256_secret_ref: JWT_HS256_SECRET
+    # rs256_public_key_ref: JWT_RS256_PUBLIC_KEY
+    # issuer: https://issuer.example.com
+    # audience: my-api
+    # leeway: 30s
+
 global_plugins:
   - name: metrics
     enabled: true
@@ -241,10 +257,6 @@ services:
     retries: 3                    # Retry on failure
     retry_backoff: 1.5            # Exponential backoff multiplier
     plugins:
-      - name: authorization
-        enabled: true
-        config:
-          type: jwt
       - name: ip-restriction
         enabled: true
         config:
@@ -286,9 +298,65 @@ routes:
             - X-Powered-By
 ```
 
+## Authentication
+
+Authentication is configured once at the top level and compiled into each
+runtime snapshot; it is never resolved from disk on the request path.
+
+```yaml
+auth:
+  mode: both
+  api_key:
+    header: X-API-Key
+    secret_ref: API_KEY_HASH
+  jwt:
+    alg: HS256
+    hs256_secret_ref: JWT_HS256_SECRET
+    issuer: https://issuer.example.com
+    audience: my-api
+```
+
+* `mode` is one of `api_key`, `jwt`, or `both`. `both` requires both
+  credentials; there is no fallback.
+* JWT algorithms are limited to `HS256` and `RS256`. HS256 secrets must be at
+  least 32 bytes; RS256 public keys must be at least 2048 bits.
+* Credentials live in the secret file (`configs/.env` by default, or
+  `$GATEWAY_ENV_FILE`) with `0600` permissions. Supported keys:
+  `API_KEY_HASH` (`sha256:<hex>`), `JWT_HS256_SECRET`,
+  `JWT_RS256_PUBLIC_KEY` (base64 PEM or escaped-newline PEM),
+  `ADMIN_TOKEN` / `ADMIN_TOKEN_HASH`.
+* Secret-file changes are hot-reloaded: the gateway stages the new values,
+  builds a candidate auth runtime, and atomically publishes it only after the
+  build succeeds. A file that changes during the build is rejected and the
+  previous runtime keeps serving. External writers should replace `.env`
+  atomically (write a temp file in the same directory, then rename it); the
+  Management API already does this. The admin token is still read at startup
+  and requires a restart to change.
+* Plaintext credentials in `config.yaml` are rejected. Legacy `auth` plugin
+  configuration is accepted only as a migration adapter and must resolve to a
+  single uniform policy.
+* The Management API requires an admin bearer token from
+  `GATEWAY_ADMIN_TOKEN`, `ADMIN_TOKEN`, or `ADMIN_TOKEN_HASH`. If none is
+  configured, the Management API fails closed with `503`.
+
 ## Management API
 
 REST API on the admin port (default `:8081`) for runtime configuration and observability.
+All admin requests require `Authorization: Bearer <admin-token>` (or
+`X-Admin-Token: <admin-token>`).
+
+### Authentication Configuration
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/config/auth` | Get the effective auth policy (secret values are never returned) |
+| `PUT` | `/api/config/auth/api-key` | Set the API key (stored as a SHA-256 hash) |
+| `PUT` | `/api/config/auth/jwt/hs256` | Set the HS256 signing secret |
+| `PUT` | `/api/config/auth/jwt/rs256` | Set the RS256 public key |
+
+```json
+{"secret": "at-least-32-bytes-for-hs256"}
+```
 
 ### Upstreams
 

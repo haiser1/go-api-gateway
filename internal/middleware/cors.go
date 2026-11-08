@@ -135,7 +135,7 @@ func NewCORSPlugin(config map[string]interface{}) gateway.PluginMiddleware {
 					}
 				}
 				w.WriteHeader(http.StatusNoContent) // 204 No Content is standard for OPTIONS preflight
-				return false // Do not proceed to upstream
+				return false                        // Do not proceed to upstream
 			}
 
 			next.ServeHTTP(w, r)

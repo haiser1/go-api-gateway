@@ -32,6 +32,12 @@ func main() {
 		w.Write(healthResponse)
 	})
 
+	mux.HandleFunc("/mock/with-auth", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(mockResponse)
+	})
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "9090"
