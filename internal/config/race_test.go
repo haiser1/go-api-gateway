@@ -206,9 +206,11 @@ func TestManager_Debounce_CoalesceRapidEvents(t *testing.T) {
 	// Wait for watcher to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Rapidly write 5 changes within 25ms (< 100ms debounce delay)
+	// Rapidly write 5 changes within 25ms (< 100ms debounce delay).
+	// All values are valid log levels (oneof) so a strict reload succeeds.
+	levels := []string{"debug", "info", "warn", "error", "trace"}
 	for i := 1; i <= 5; i++ {
-		newCfg := Config{Server: ServerConfig{LogLevel: fmt.Sprintf("debug-%d", i)}}
+		newCfg := Config{Server: ServerConfig{LogLevel: levels[i-1]}}
 		newData, _ := yaml.Marshal(newCfg)
 		_ = os.WriteFile(configPath, newData, 0644)
 		time.Sleep(5 * time.Millisecond)
@@ -231,8 +233,8 @@ loop:
 	if reloadCount != 1 {
 		t.Errorf("expected exactly 1 coalesced reload, got %d", reloadCount)
 	}
-	if m.GetConfig().Server.LogLevel != "debug-5" {
-		t.Errorf("expected latest log level debug-5, got %s", m.GetConfig().Server.LogLevel)
+	if m.GetConfig().Server.LogLevel != "trace" {
+		t.Errorf("expected latest log level trace, got %s", m.GetConfig().Server.LogLevel)
 	}
 }
 
