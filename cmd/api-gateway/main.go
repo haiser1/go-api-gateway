@@ -35,7 +35,10 @@ func main() {
 
 	log.Info().Str("level", logLevel.String()).Msg("Logger initialized")
 
-	server := gateway.NewServer(cfgManager)
+	server, err := gateway.NewServer(cfgManager)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to build initial runtime")
+	}
 
 	go func() {
 		if err := server.Start(); err != nil {
@@ -52,6 +55,11 @@ func main() {
 
 	if err := server.Shutdown(ctx); err != nil {
 		log.Fatal().Err(err).Msg("Failed to shutdown server")
+	}
+
+	// Stop the config watcher after the servers are down.
+	if err := cfgManager.Close(); err != nil {
+		log.Warn().Err(err).Msg("Failed to close config watcher")
 	}
 
 	log.Info().Msg("Server Stopped")

@@ -5,14 +5,16 @@ import (
 
 	"github.com/haiser1/go-api-gateway/internal/config"
 	"github.com/haiser1/go-api-gateway/internal/handler"
+	"github.com/haiser1/go-api-gateway/internal/secrets"
 	"github.com/julienschmidt/httprouter"
 )
 
 // RegisterManagementRoutes mendaftarkan semua rute untuk API Manajemen.
-func RegisterManagementRoutes(router *httprouter.Router, manager *config.Manager) {
+func RegisterManagementRoutes(router *httprouter.Router, manager *config.Manager, provider secrets.Provider) {
 	h := &handler.ManagementHandler{
-		Manager:   manager,
-		StartTime: time.Now(),
+		Manager:        manager,
+		SecretProvider: provider,
+		StartTime:      time.Now(),
 		GetCircuitBreakerStats: func(serviceId string) (string, int, time.Time) {
 			return GetCircuitBreaker(serviceId).Stats()
 		},
@@ -35,6 +37,12 @@ func RegisterManagementRoutes(router *httprouter.Router, manager *config.Manager
 	router.GET("/api/upstreams/:upstreamId", h.GetUpstreamById)
 	router.PUT("/api/upstreams/:upstreamId", h.UpdateUpstream)
 	router.DELETE("/api/upstreams/:upstreamId", h.DeleteUpstream)
+
+	// === Authentication Config Routes ===
+	router.GET("/api/config/auth", h.GetAuthConfig)
+	router.PUT("/api/config/auth/api-key", h.UpdateAPIKeyAuth)
+	router.PUT("/api/config/auth/jwt/hs256", h.UpdateHS256Auth)
+	router.PUT("/api/config/auth/jwt/rs256", h.UpdateRS256Auth)
 
 	// === Global Plugin Routes ===
 	router.GET("/api/global-plugins", h.GetGlobalPlugins)
