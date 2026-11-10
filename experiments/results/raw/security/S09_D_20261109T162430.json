@@ -1,0 +1,15 @@
+{
+  "scenario_id": "S09",
+  "config": "D",
+  "sent": 30,
+  "rejected": 20,
+  "block_rate": 66.67,
+  "codes": {
+    "401": 20,
+    "200": 10
+  },
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "note": "wrong_iss / wrong_aud / nbf_future"
+}

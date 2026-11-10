@@ -1,0 +1,56 @@
+{
+  "timestamp": "2026-11-09T08:13:56.494Z",
+  "row": {
+    "id": "F09",
+    "description": "Header/body diteruskan ke upstream; X-User-Id disanitasi",
+    "config": "D",
+    "request": "POST /echo + X-Custom + body JSON + X-User-Id spoof",
+    "expected_status": "body/header sama; X-User-Id=user-123",
+    "actual_status": 200,
+    "pass": "PASS",
+    "notes": "method=POST, X-Custom='thesis', X-User-Id='user-123'"
+  },
+  "raw": {
+    "response": {
+      "body": "{\"hello\":\"world\"}",
+      "headers": {
+        "Accept-Encoding": [
+          "identity"
+        ],
+        "Authorization": [
+          "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJnby1hcGktZ2F0ZXdheSIsImV4cCI6MTc5NDQ3MDg3MSwiaWF0IjoxNzk0MjExNjcxLCJpc3MiOiJ0aGVzaXMtdGVzdCIsIm5iZiI6MTc5NDIxMTY2MSwic3ViIjoidXNlci0xMjMifQ.9PFN0sddnvWNZtah4KA9g_X1Y3Kbhe-am5gOYskmXn0"
+        ],
+        "Content-Length": [
+          "17"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "User-Agent": [
+          "Python-urllib/3.14"
+        ],
+        "X-Api-Key": [
+          "WOJvqUZPNWQjqWrjOmzDpRkTAxoDKTHnZzWNAGM22UM"
+        ],
+        "X-Custom": [
+          "thesis"
+        ],
+        "X-Forwarded-For": [
+          "172.18.0.1"
+        ],
+        "X-Forwarded-Host": [
+          "localhost:8080"
+        ],
+        "X-Forwarded-Proto": [
+          "http"
+        ],
+        "X-User-Id": [
+          "user-123"
+        ]
+      },
+      "method": "POST",
+      "path": "/echo",
+      "query": ""
+    }
+  }
+}

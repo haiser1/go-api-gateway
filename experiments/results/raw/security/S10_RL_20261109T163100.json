@@ -1,0 +1,18 @@
+{
+  "scenario_id": "S10",
+  "config": "RL",
+  "label": "rate_limited",
+  "sent": 500,
+  "rejected": 500,
+  "block_rate": 100.0,
+  "codes": {
+    "401": 60,
+    "429": 440
+  },
+  "first_429_iteration": 61,
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "control_reset_wait_seconds": 28.04,
+  "note": "rate_limited: 500 tebakan key acak berurutan pada satu koneksi keep-alive; 429 pertama pada iterasi 61; kontrol setelah reset window 28.04 s"
+}

@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-11-09T08:14:57.865Z",
+  "row": {
+    "id": "F04",
+    "description": "API key valid saja pada rute yang butuh JWT",
+    "config": "D",
+    "request": "GET /api/v1/users + X-API-Key (tanpa Authorization)",
+    "expected_status": "401",
+    "actual_status": 401,
+    "pass": "PASS",
+    "notes": "body='{\"error\":\"Authorization header required\"}'"
+  },
+  "raw": {
+    "response": "{\"error\":\"Authorization header required\"}\n"
+  }
+}

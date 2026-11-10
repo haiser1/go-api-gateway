@@ -12,8 +12,9 @@ services:
       - GOMAXPROCS=2
       - GOMEMLIMIT=400MiB
       - GATEWAY_ENV_FILE=/configs/.env
+      - GATEWAY_ADMIN_TOKEN=test-admin-token
     volumes:
-      - ${CONFIG_DIR:-../../configs}:/configs
+      - ${CONFIG_DIR:-../runtime}:/configs
     ulimits:
       nofile:
         soft: 65536
@@ -49,12 +50,13 @@ services:
       - test-net
 
   k6:
-    image: grafana/k6:latest
+    image: grafana/k6:2.3.0
     container_name: test-k6
     profiles:
       - loadtest
     depends_on:
       - gateway
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - BASE_URL=http://gateway:8080
       - GOMEMLIMIT=1600MiB
@@ -74,4 +76,3 @@ services:
 networks:
   test-net:
     driver: bridge
-

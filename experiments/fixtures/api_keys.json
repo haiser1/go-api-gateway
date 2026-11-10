@@ -1,0 +1,17 @@
+{
+  "revoked": {
+    "value": "-cE_nEBOemSzFnLflpXS0-VGRr9vxNfJ5GBQwJQQoPo",
+    "hash": "sha256:fc31792a6344cd67409aff3a70bacbc1947c8aba0b1d273d038f6449df116aa6",
+    "note": "never active; used as a revoked-key sample"
+  },
+  "unknown": {
+    "value": "WHCF-0PtTkA3WsWFkT0B52ztmGUjwD__iWll4eQNkFs",
+    "hash": "sha256:583c4ea3193c5ce92aef11f4689f6882e5b4a742f76347fdb8ae900337b47c21",
+    "note": "random, never registered"
+  },
+  "valid": {
+    "value": "sHAKVhxFG1YPPIafuZAPQIWXwJANPbj5dbREV4MWAoM",
+    "hash": "sha256:ac5d1aaa27852994706251c03499883a9dd6078ec0b439abbf200760bd8d42da",
+    "note": "accepted by the gateway"
+  }
+}

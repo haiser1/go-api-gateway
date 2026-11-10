@@ -2,6 +2,8 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -42,6 +44,23 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write(mockResponse)
+	})
+
+	// /echo is a deterministic functional-test fixture: it reflects the
+	// request the gateway actually forwarded (method, path, query, headers,
+	// body). It is never used by performance tests.
+	mux.HandleFunc("/echo", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		payload := map[string]interface{}{
+			"method":  r.Method,
+			"path":    r.URL.Path,
+			"query":   r.URL.RawQuery,
+			"headers": r.Header,
+			"body":    string(body),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(payload)
 	})
 
 	port := os.Getenv("PORT")

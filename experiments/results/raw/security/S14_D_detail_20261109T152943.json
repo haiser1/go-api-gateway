@@ -1,0 +1,36 @@
+{
+  "scenario_id": "S14",
+  "config": "D",
+  "sent": 30,
+  "rejected": 25,
+  "block_rate": 83.33,
+  "codes": {
+    "401": 25,
+    "200": 5
+  },
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "note": "Opsional: malformed 20/20 ditolak 401; oversized_garbage 5/5 ditolak 401; oversized_valid 5/5 diterima 200 (signature valid); gateway /health=200",
+  "variant_codes": {
+    "malformed_empty": {
+      "401": 5
+    },
+    "malformed_bad_base64": {
+      "401": 5
+    },
+    "oversized_garbage": {
+      "401": 5
+    },
+    "malformed_garbage": {
+      "401": 5
+    },
+    "oversized_valid": {
+      "200": 5
+    },
+    "malformed_not_three_segments": {
+      "401": 5
+    }
+  },
+  "gateway_alive_after": 200
+}

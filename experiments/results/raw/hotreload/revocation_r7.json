@@ -1,0 +1,56 @@
+{
+  "rep": 7,
+  "t_change": "2026-11-09T13:42:07.314037+00:00",
+  "admin_status": 200,
+  "admin_done_ms": 12.797,
+  "t_first_reject_ms": 50.438,
+  "first_reject_status": 401,
+  "in_flight_200": 1,
+  "samples": [
+    {
+      "ms": -300.628,
+      "status": 200,
+      "latency_ms": 2.816
+    },
+    {
+      "ms": -250.521,
+      "status": 200,
+      "latency_ms": 1.586
+    },
+    {
+      "ms": -200.414,
+      "status": 200,
+      "latency_ms": 1.646
+    },
+    {
+      "ms": -150.297,
+      "status": 200,
+      "latency_ms": 1.53
+    },
+    {
+      "ms": -100.19,
+      "status": 200,
+      "latency_ms": 1.485
+    },
+    {
+      "ms": -49.896,
+      "status": 200,
+      "latency_ms": 1.594
+    },
+    {
+      "ms": 0.332,
+      "status": 200,
+      "latency_ms": 1.527
+    },
+    {
+      "ms": 50.438,
+      "status": 401,
+      "latency_ms": 0.798
+    },
+    {
+      "ms": 100.532,
+      "status": 401,
+      "latency_ms": 0.893
+    }
+  ]
+}

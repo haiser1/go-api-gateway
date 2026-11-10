@@ -1,0 +1,17 @@
+{
+  "scenario_id": "S10",
+  "config": "D",
+  "label": "no_rate_limit",
+  "sent": 500,
+  "rejected": 500,
+  "block_rate": 100.0,
+  "codes": {
+    "401": 500
+  },
+  "first_429_iteration": null,
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "control_reset_wait_seconds": null,
+  "note": "no_rate_limit: 500 tebakan key acak berurutan pada satu koneksi keep-alive; tidak ada 429"
+}

@@ -1,0 +1,22 @@
+{
+  "scenario_id": "S11",
+  "config": "RL",
+  "sent": 64,
+  "rejected": 4,
+  "block_rate": 6.25,
+  "codes": {
+    "200": 60,
+    "429": 4
+  },
+  "first_429_iteration": 61,
+  "success_200_before_429": 60,
+  "reset_probe_codes": {
+    "200": 1,
+    "429": 30
+  },
+  "reset_wait_seconds": 60.04,
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "note": "200 sebelum 429 = 60; 429 pertama pada iterasi 61; 200 lagi setelah 60.04 s"
+}

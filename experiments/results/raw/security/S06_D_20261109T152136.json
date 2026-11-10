@@ -1,0 +1,14 @@
+{
+  "scenario_id": "S06",
+  "config": "D",
+  "sent": 30,
+  "rejected": 30,
+  "block_rate": 100.0,
+  "codes": {
+    "401": 30
+  },
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "note": "Payload diubah, signature asli dipertahankan"
+}

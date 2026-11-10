@@ -1,0 +1,14 @@
+{
+  "scenario_id": "S02",
+  "config": "D",
+  "sent": 30,
+  "rejected": 30,
+  "block_rate": 100.0,
+  "codes": {
+    "401": 30
+  },
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "note": "API key acak + JWT valid"
+}

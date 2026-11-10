@@ -6,3 +6,6 @@ performance/*.json
 .agents/
 /docs/specs/implementation-plan-test.md
 /docs/specs/implementation-plan.md
+
+# Test runtime state is regenerated per configuration
+/experiments/runtime/

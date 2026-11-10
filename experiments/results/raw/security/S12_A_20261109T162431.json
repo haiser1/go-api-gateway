@@ -1,0 +1,14 @@
+{
+  "scenario_id": "S12",
+  "config": "A",
+  "sent": 5,
+  "rejected": 5,
+  "block_rate": 100.0,
+  "codes": {
+    "0 (connection refused)": 5
+  },
+  "controls": 1,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "note": "host direct failed 5/5; docker-network direct status=200 (membuktikan kontrol jaringan)"
+}

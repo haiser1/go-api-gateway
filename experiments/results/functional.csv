@@ -1,0 +1,10 @@
+id,description,config,request,expected_status,actual_status,pass,notes
+F01,Rute valid + kredensial valid (API key + JWT),D,GET /api/v1/users + X-API-Key + Bearer JWT,200; body == upstream,200,PASS,"body='{""status"":""mock_ok""}'; upstream='{""status"":""mock_ok""}'"
+F02,Rute tidak terdaftar,D,GET /api/v1/does-not-exist + kredensial valid,404,404,PASS,"body='{""error"":""Not Found""}'"
+F03,Rute publik (auth override enabled=false) tanpa kredensial,D,GET /health tanpa kredensial,200; body == upstream,200,PASS,"body='{""status"":""healthy""}'"
+F04,API key valid saja pada rute yang butuh JWT,D,GET /api/v1/users + X-API-Key (tanpa Authorization),401,401,PASS,"body='{""error"":""Authorization header required""}'"
+F05,JWT valid saja pada rute yang butuh API key,D,GET /api/v1/users + Bearer JWT (tanpa X-API-Key),401/403,401,PASS,"body='{""error"":""API key required""}'"
+F06,Prioritas konfigurasi route > service > global (request-transform),F06,GET /echo + kredensial valid; X-Scope global/service/route,200; X-Scope=route,200,PASS,"X-Scope teramati='route' (global=global, service=service, route=route)"
+F07,Perubahan konfigurasi (hot reload) diterapkan tanpa restart,D,Ubah plugin auth service lalu pulihkan; request tanpa kredensial,401 -> 200 -> 401,"initial=401, open@0.106s, restore@0.21s",PASS,container sama=True
+F08,Upstream mati -> circuit breaker terbuka; pulih setelah hidup,D,"Hentikan mock-server, 8 request, hidupkan, tunggu cooldown 30s",muncul 503 lalu 200,"[502, 502, 502, 502, 502, 503, 503, 503]",PASS,final=200
+F09,Header/body diteruskan ke upstream; X-User-Id disanitasi,D,POST /echo + X-Custom + body JSON + X-User-Id spoof,body/header sama; X-User-Id=user-123,200,PASS,"method=POST, X-Custom='thesis', X-User-Id='user-123'"

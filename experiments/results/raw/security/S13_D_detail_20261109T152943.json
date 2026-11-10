@@ -1,0 +1,15 @@
+{
+  "scenario_id": "S13",
+  "config": "D",
+  "sent": 30,
+  "rejected": 30,
+  "block_rate": 100.0,
+  "codes": {
+    "200": 30
+  },
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "spoof_honored": 0,
+  "note": "Opsional: X-User-Id spoof dihormati 0/30; status 200 memang diharapkan (dinilai dari header di upstream)"
+}

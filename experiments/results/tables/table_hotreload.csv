@@ -1,0 +1,16 @@
+section,item,value,unit
+revocation,reps,10,count
+revocation,mean_t_first_reject_ms,50.7587,ms
+revocation,min_t_first_reject_ms,50.438,ms
+revocation,max_t_first_reject_ms,51.208,ms
+revocation,in_flight_200_total,10,requests
+availability,k6_vus,50,VU
+availability,k6_rps,7582.739443711802,req/s
+availability,k6_error_rate_pct,0.0,%
+availability,k6_p95_ms,15.529988,ms
+availability,probe_requests,2956,count
+availability,probe_non_200,0,count
+availability,probe_median_ms,1.557,ms
+availability,probe_max_ms,26.544,ms
+availability,reloads,5,count
+availability,container_same,True,bool

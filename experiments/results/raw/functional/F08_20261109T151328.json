@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-11-09T08:13:28.186Z",
+  "row": {
+    "id": "F08",
+    "description": "Circuit breaker",
+    "config": "D",
+    "request": "-",
+    "expected_status": "503 lalu 200",
+    "actual_status": 0,
+    "pass": "FAIL",
+    "notes": "docker() got an unexpected keyword argument 'timeout'"
+  },
+  "raw": {}
+}

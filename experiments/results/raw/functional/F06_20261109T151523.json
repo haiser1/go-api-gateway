@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-11-09T08:15:23.227Z",
+  "row": {
+    "id": "F06",
+    "description": "Prioritas konfigurasi route > service > global (request-transform)",
+    "config": "F06",
+    "request": "GET /echo + kredensial valid; X-Scope global/service/route",
+    "expected_status": "200; X-Scope=route",
+    "actual_status": 200,
+    "pass": "PASS",
+    "notes": "X-Scope teramati='route' (global=global, service=service, route=route)"
+  },
+  "raw": {
+    "response": {
+      "body": "",
+      "headers": {
+        "Accept-Encoding": [
+          "identity"
+        ],
+        "Authorization": [
+          "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJnby1hcGktZ2F0ZXdheSIsImV4cCI6MTc5NDQ3MDg3MSwiaWF0IjoxNzk0MjExNjcxLCJpc3MiOiJ0aGVzaXMtdGVzdCIsIm5iZiI6MTc5NDIxMTY2MSwic3ViIjoidXNlci0xMjMifQ.9PFN0sddnvWNZtah4KA9g_X1Y3Kbhe-am5gOYskmXn0"
+        ],
+        "User-Agent": [
+          "Python-urllib/3.14"
+        ],
+        "X-Api-Key": [
+          "WOJvqUZPNWQjqWrjOmzDpRkTAxoDKTHnZzWNAGM22UM"
+        ],
+        "X-Forwarded-For": [
+          "172.18.0.1"
+        ],
+        "X-Forwarded-Host": [
+          "localhost:8080"
+        ],
+        "X-Forwarded-Proto": [
+          "http"
+        ],
+        "X-Scope": [
+          "route"
+        ],
+        "X-User-Id": [
+          "user-123"
+        ]
+      },
+      "method": "GET",
+      "path": "/echo",
+      "query": ""
+    }
+  }
+}

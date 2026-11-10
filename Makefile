@@ -1,4 +1,25 @@
-.PHONY: run run-dev build test restart docker-up docker-down docker-build docker-logs docker-stats docker-ps docker-clean k6-test
+.PHONY: run run-dev build test restart docker-up docker-down docker-build docker-logs docker-stats docker-ps docker-clean k6-test up down test-logs test-ps
+
+# ===================================================================
+# THESIS TEST ENVIRONMENT (experiments/)
+# ===================================================================
+
+# Usage: make up CONFIG=A|B|C|D|C2|Z
+CONFIG ?= A
+TEST_COMPOSE = docker compose -f experiments/compose/docker-compose.test.yml
+
+up:
+	@./experiments/scripts/prepare_config.sh $(CONFIG)
+	@CONFIG_DIR=$(CURDIR)/experiments/runtime $(TEST_COMPOSE) up -d --build
+
+down:
+	@$(TEST_COMPOSE) down -v
+
+test-logs:
+	@$(TEST_COMPOSE) logs --tail=200
+
+test-ps:
+	@$(TEST_COMPOSE) ps
 
 # ===================================================================
 # RUN COMMANDS

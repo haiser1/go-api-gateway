@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-11-09T08:16:47.467Z",
+  "row": {
+    "id": "F08",
+    "description": "Upstream mati -> circuit breaker terbuka; pulih setelah hidup",
+    "config": "D",
+    "request": "Hentikan mock-server, 8 request, hidupkan, tunggu cooldown 30s",
+    "expected_status": "muncul 503 lalu 200",
+    "actual_status": [
+      502,
+      502,
+      502,
+      502,
+      502,
+      503,
+      503,
+      503
+    ],
+    "pass": "PASS",
+    "notes": "final=200"
+  },
+  "raw": {
+    "status_sequence": [
+      502,
+      502,
+      502,
+      502,
+      502,
+      503,
+      503,
+      503
+    ],
+    "final": 200
+  }
+}

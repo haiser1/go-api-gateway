@@ -1,0 +1,14 @@
+{
+  "scenario_id": "S13",
+  "config": "D",
+  "sent": 30,
+  "rejected": 0,
+  "block_rate": 0.0,
+  "codes": {
+    "200": 30
+  },
+  "controls": 30,
+  "control_rejected": 0,
+  "frr": 0.0,
+  "note": "Opsional: X-User-Id klien harus ditimpa identitas token"
+}

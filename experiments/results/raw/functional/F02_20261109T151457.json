@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-11-09T08:14:57.394Z",
+  "row": {
+    "id": "F02",
+    "description": "Rute tidak terdaftar",
+    "config": "D",
+    "request": "GET /api/v1/does-not-exist + kredensial valid",
+    "expected_status": "404",
+    "actual_status": 404,
+    "pass": "PASS",
+    "notes": "body='{\"error\":\"Not Found\"}'"
+  },
+  "raw": {
+    "response": "{\"error\":\"Not Found\"}"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "run_id": "D_vu50_closed_r3",
+  "config": "D",
+  "mode": "closed",
+  "vus": 50,
+  "rate": 0,
+  "rep": 3,
+  "started_at": "2026-11-09T12:01:30.168902+00:00",
+  "finished_at": "2026-11-09T12:02:43.529304+00:00",
+  "k6_exit_code": 0,
+  "valid": true,
+  "invalid_reason": "",
+  "metrics": {
+    "requests": 426370,
+    "rps": 7105.391230215997,
+    "error_rate": 0,
+    "checks_rate": 1,
+    "latency_ms": {
+      "avg": 6.890472187703243,
+      "min": 0.272107,
+      "med": 6.021141500000001,
+      "p(90)": 12.823060000000002,
+      "p(95)": 15.56947965,
+      "p(99)": 20.195228789999998,
+      "max": 59.296397
+    }
+  },
+  "resources": {
+    "gateway_cpu_percent_mean": 165.385,
+    "gateway_mem_mib_mean": 22.258,
+    "gateway_mem_mib_max": 22.67,
+    "samples": 63
+  },
+  "files": {
+    "summary": "summary.json",
+    "stats": "stats.csv",
+    "k6_log": "k6.log",
+    "warmup_log": "warmup.log"
+  }
+}

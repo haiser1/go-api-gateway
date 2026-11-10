@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-11-09T08:15:48.609Z",
+  "row": {
+    "id": "F07",
+    "description": "Perubahan konfigurasi (hot reload) diterapkan tanpa restart",
+    "config": "D",
+    "request": "Ubah plugin auth service lalu pulihkan; request tanpa kredensial",
+    "expected_status": "401 -> 200 -> 401",
+    "actual_status": "initial=401, open@0.106s, restore@0.21s",
+    "pass": "PASS",
+    "notes": "container sama=True"
+  },
+  "raw": {
+    "open_seconds": 0.106,
+    "restore_seconds": 0.21,
+    "container_same": true
+  }
+}

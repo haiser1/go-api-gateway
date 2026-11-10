@@ -1,7 +1,7 @@
 # Temuan Rekonstruksi Repositori (Repo Findings) — Go API Gateway
 
 > Dokumen ini disusun untuk memenuhi **FASE 0 — Rekonstruksi repo (read-only)** pada dokumen `implementation-plan-test.md`.
-> Seluruh analisis dan bukti baris kode didasarkan pada audit langsung terhadap branch `main` pada commit saat ini.
+> Seluruh analisis dan bukti baris kode didasarkan pada audit langsung terhadap branch `thesis-testing` pada commit `dccb182` (setelah perbaikan pasca-Checkpoint 0: scoping auth service/route dan sanitasi header identitas).
 
 ---
 
@@ -96,29 +96,26 @@ Urutan eksekusi permintaan masuk dari terluar hingga terdalam adalah sebagai ber
 | 2 | `cors` | 1 | Jika OPTIONS Preflight: `204 No Content` (langsung return) | [`internal/middleware/cors.go#L128-L139`](file:///home/mark/Development/go-api-gateway/internal/middleware/cors.go#L128-L139) |
 | 3 | `logger` / `logging` | 2 | Pasif (mencatat log akses JSON Zerolog) | [`internal/middleware/logger.go#L32-L53`](file:///home/mark/Development/go-api-gateway/internal/middleware/logger.go#L32-L53) |
 | 4 | `ip-restriction` / `bot-detection` | 3 | `403 Forbidden` (`{"error":"Forbidden: Client IP or User-Agent is restricted"}`) | [`internal/middleware/ip_restriction.go#L135-L169`](file:///home/mark/Development/go-api-gateway/internal/middleware/ip_restriction.go#L135-L169) |
-| 5 | `rate-limiting` | 4 | `429 Too Many Requests` (`{"error":"Rate limit exceeded"}`) | [`internal/middleware/ratelimit.go#L41-L60`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L41-L60) |
+| 5 | `rate-limiting` (`key_by: ip`, default) | 4 | `429 Too Many Requests` (`{"error":"Rate limit exceeded"}`) | [`internal/middleware/ratelimit.go#L89-L135`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L89-L135) |
 | 6 | `auth` / `authorization` | 5 | `401 Unauthorized` (kredensial hilang / salah / format rusak)<br>`503 Service Unavailable` (jika plugin auth aktif tapi runtime auth nil) | [`internal/auth/middleware.go#L30-L48`](file:///home/mark/Development/go-api-gateway/internal/auth/middleware.go#L30-L48)<br>[`internal/gateway/routing.go#L490-L493`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L490-L493) |
-| 7 | `request-transform` | 6 | Pasif / Mutasi header, query params, response headers | [`internal/middleware/request_transform.go#L121-L164`](file:///home/mark/Development/go-api-gateway/internal/middleware/request_transform.go#L121-L164) |
-| 8 | ReverseProxy & Upstream / Circuit Breaker | N/A (Core) | `503 Service Unavailable` (Circuit breaker OPEN)<br>`504 Gateway Timeout` (Upstream timeout / deadline)<br>`502 Bad Gateway` (Upstream connection refused / down) | [`internal/gateway/routing.go#L209-L230`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L209-L230)<br>[`internal/gateway/httperror.go#L45-L74`](file:///home/mark/Development/go-api-gateway/internal/gateway/httperror.go#L45-L74) |
+| 7 | `rate-limiting` (`key_by: user`) | 6 | `429 Too Many Requests`; key dari `sub`/`user_id`/`uid` JWT terverifikasi | [`internal/middleware/ratelimit.go#L383-L420`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L383-L420) |
+| 8 | `request-transform` | 7 | Pasif / Mutasi header, query params, response headers | [`internal/middleware/request_transform.go#L121-L164`](file:///home/mark/Development/go-api-gateway/internal/middleware/request_transform.go#L121-L164) |
+| 9 | ReverseProxy & Upstream / Circuit Breaker | N/A (Core) | `503 Service Unavailable` (Circuit breaker OPEN)<br>`504 Gateway Timeout` (Upstream timeout / deadline)<br>`502 Bad Gateway` (Upstream connection refused / down) | [`internal/gateway/routing.go#L209-L230`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L209-L230)<br>[`internal/gateway/httperror.go#L45-L74`](file:///home/mark/Development/go-api-gateway/internal/gateway/httperror.go#L45-L74) |
 
 ---
 
 ## 4. Analisis Rate Limiter terhadap Kegagalan Autentikasi
 
 * **Pertanyaan:** Apakah kegagalan autentikasi ikut dihitung oleh rate limiter (penting untuk skenario S10)?
-* **Temuan:** **YA, IKUT DIHITUNG.**
+* **Temuan:** **YA untuk `key_by: ip` (default), TIDAK untuk `key_by: user`.**
 * **Bukti Teknis:**
-  1. Pada `sortPluginChain` ([`internal/gateway/routing.go#L325-L338`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L325-L338)), `rate-limiting` memiliki prioritas **4**, sedangkan `auth` / `authorization` memiliki prioritas **5**.
-  2. Saat rantai handler dibungkus dalam urutan terbalik ([`internal/gateway/routing.go#L480-L507`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L480-L507)), `rate-limiting` membungkus `auth`. Artinya, setiap request yang tiba dieksekusi oleh `rate-limiting` terlebih dahulu sebelum mencapai `auth`.
-  3. Di dalam handler `rate-limiting` ([`internal/middleware/ratelimit.go#L48-L51`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L48-L51)):
-     ```go
-     mu.Lock()
-     requests[ip]++
-     count := requests[ip]
-     mu.Unlock()
-     ```
-     Penghitungan counter dilakukan **sebelum** pemanggilan `next.ServeHTTP(w, r)`.
-* **Implikasi Pengujian (S10):** Permintaan yang gagal otentikasi (misal 500 tebakan API key salah dari satu IP) akan menaikkan counter rate limit. Begitu limit tercapai, gateway langsung menolak request berikutnya dengan status **HTTP 429 Too Many Requests**, bahkan sebelum verifikasi API key atau JWT dieksekusi.
+  1. `sortPluginChain` sekarang menentukan prioritas rate limit secara dinamis ([`internal/gateway/routing.go#L317-L365`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L317-L365)):
+     - `key_by: ip` → prioritas **4** (sebelum `auth`/`authorization` prioritas **5**).
+     - `key_by: user` → prioritas **6** (setelah auth, sebelum `request-transform` prioritas **7**).
+  2. Rantai handler dibungkus terbalik ([`internal/gateway/routing.go#L480-L507`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L480-L507)); plugin berprioritas lebih kecil dieksekusi lebih dulu.
+  3. Untuk `key_by: ip`, counter dinaikkan di `allow()` **sebelum** `next.ServeHTTP`, sehingga 500 tebakan API key salah dari satu IP tetap dihitung dan memicu 429 pada iterasi ke-61 (S10). Untuk `key_by: user`, limiter membutuhkan `auth.Context` yang terverifikasi; request dengan kredensial salah sudah ditolak auth sebelum limiter berjalan.
+  4. Key IP diekstrak dari `r.RemoteAddr` setelah `net.SplitHostPort` ([`internal/middleware/ratelimit.go#L383-L405`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L383-L405)), sehingga koneksi baru dari IP yang sama memakai bucket yang sama.
+* **Implikasi Pengujian (S10):** Skenario brute force memakai `key_by: ip` (default) agar percobaan gagal ikut dihitung. Kontrol sah setelah banjir harus menunggu reset window karena bucket per-IP dibagi bersama; runner sudah menyesuaikan (`control_reset_wait_seconds`).
 
 ---
 
@@ -131,7 +128,7 @@ Gateway mendukung pendaftaran plugin pada 3 tingkatan ([`internal/config/config.
 3. **Route Plugins:** `Route.Plugins` ([`config.go#L205`](file:///home/mark/Development/go-api-gateway/internal/config/config.go#L205)) — berlaku spesifik untuk rute tersebut.
 
 ### b. Aturan Penggabungan (*Merging & Override*)
-Fungsi `resolvePluginChain` ([`internal/gateway/routing.go#L301-L320`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L301-L320)) menggabungkan plugin berdasarkan nama (`PluginConfig.Name`):
+Fungsi `resolvePluginChain` ([`internal/gateway/routing.go#L295-L314`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L295-L314)) menggabungkan plugin berdasarkan nama (`PluginConfig.Name`):
 ```go
 func resolvePluginChain(route config.Route, service config.Service, globalPlugins []config.PluginConfig) []config.PluginConfig {
     pluginMap := make(map[string]config.PluginConfig)
@@ -141,8 +138,8 @@ func resolvePluginChain(route config.Route, service config.Service, globalPlugin
     ...
 }
 ```
-* **Prioritas Penimpaan Konfigurasi:** **Route > Service > Global**. Jika plugin dengan nama yang sama didefinisikan di Global dan Route, konfigurasi di tingkat Route yang digunakan.
-* **Perilaku Top-Level Auth:** Jika blok konfigurasi `auth:` didefinisikan di root konfigurasi `config.yaml` (`Config.Auth != nil`), runtime gateway secara otomatis menyuntikkan plugin auth ke seluruh rute ([`internal/gateway/routing.go#L153-L158`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L153-L158)). Jika konfigurasi auth dispesifikasikan via plugin per-rute (format plugin), rute yang tidak memasang plugin auth akan berfungsi sebagai rute publik (tanpa otentikasi).
+* **Prioritas Penimpaan Konfigurasi:** **Route > Service > Global**. Jika plugin dengan nama yang sama didefinisikan di Global dan Route, konfigurasi di tingkat Route yang digunakan. Plugin dengan `enabled: false` pada tingkat Route dapat menonaktifkan plugin yang diaktifkan Service.
+* **Perilaku Top-Level Auth (pasca-refactor `dccb182`):** Blok `auth:` di root `config.yaml` hanya mendefinisikan **kebijakan** (mode, `secret_ref`, klaim). Penegakan autentikasi tetap memerlukan plugin `auth`/`authorization` yang aktif pada tingkat **Service atau Route** ([`internal/gateway/routing.go#L478-L497`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L478-L497)). Plugin auth **dilarang** di `global_plugins` ([`internal/config/auth.go#L373-L381`](file:///home/mark/Development/go-api-gateway/internal/config/auth.go#L373-L381), [`internal/config/validator/semantic.go#L141-L149`](file:///home/mark/Development/go-api-gateway/internal/config/validator/semantic.go#L141-L149)). Rute tanpa plugin auth (atau dengan override `enabled: false`) adalah rute publik.
 
 ---
 
@@ -194,7 +191,7 @@ func resolvePluginChain(route config.Route, service config.Service, globalPlugin
 |---|---|---|---|---|---|
 | **F01** | Rute valid, kredensial valid | D | 200, body sama dengan upstream | **Didukung** | Config D (`both`) memvalidasi API key dan JWT sukses; upstream mock mengembalikan 200 ([`mock-server/main.go#L23-L27`](file:///home/mark/Development/go-api-gateway/mock-server/main.go#L23-L27)). |
 | **F02** | Rute tidak terdaftar | D | 404 Not Found | **Didukung** | Radix tree mengembalikan `nil`, proxy menulis `404 Not Found` ([`internal/gateway/proxy.go#L124`](file:///home/mark/Development/go-api-gateway/internal/gateway/proxy.go#L124)). |
-| **F03** | Rute publik (tanpa plugin auth) tetap bisa diakses | Campuran | 200 OK | **Didukung** | Menggunakan konfigurasi plugin auth per-rute (bukan top-level `auth:`) memungkinkan rute tanpa auth diakses tanpa kredensial ([`internal/gateway/routing.go#L481-L497`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L481-L497)). |
+| **F03** | Rute publik (tanpa plugin auth) tetap bisa diakses | Campuran | 200 OK | **Didukung** | Auth hanya ditegakkan bila plugin auth aktif pada Service/Route; rute tanpa plugin auth atau dengan override `enabled: false` dapat diakses tanpa kredensial ([`internal/gateway/routing.go#L478-L497`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L478-L497)). |
 | **F04** | API key valid saja pada rute yang butuh JWT | D | 401 Unauthorized | **Didukung** | Header Authorization tidak ada -> `ErrAuthorizationHeaderRequired` -> HTTP 401 ([`internal/auth/runtime.go#L143`](file:///home/mark/Development/go-api-gateway/internal/auth/runtime.go#L143)). |
 | **F05** | JWT valid saja pada rute yang butuh API key | D | 401 Unauthorized | **Didukung** | Header API key tidak ada -> `ErrAPIKeyRequired` -> HTTP 401 ([`internal/auth/runtime.go#L132`](file:///home/mark/Development/go-api-gateway/internal/auth/runtime.go#L132)). |
 | **F06** | Prioritas konfigurasi route > service > global | D | Nilai route menimpa global | **Didukung** | Diuji dengan plugin transform/CORS/ratelimit. `resolvePluginChain` menimpa service dan global ([`internal/gateway/routing.go#L301-L320`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L301-L320)). |
@@ -217,10 +214,10 @@ func resolvePluginChain(route config.Route, service config.Service, globalPlugin
 | **S07** | `alg=none` (tanpa signature) | Ditolak (401) | **Didukung** | `jwt.WithValidMethods` dan pengecekan eksplisit di `keyFunc` menolak `none` -> `401 Unauthorized: Invalid token` ([`internal/auth/jwt.go#L43, L92`](file:///home/mark/Development/go-api-gateway/internal/auth/jwt.go#L43)). |
 | **S08** | Algorithm confusion (HS256 dengan RSA public key) | Ditolak (401) | **Didukung** | Saat verifier dikonfigurasi RS256, token HS256 ditolak oleh parser option `WithValidMethods` dan `keyFunc` -> 401 ([`internal/auth/jwt.go#L65-L67`](file:///home/mark/Development/go-api-gateway/internal/auth/jwt.go#L65-L67)). |
 | **S09** | Klaim salah (`wrong_iss`, `wrong_aud`, `nbf_future`) | Ditolak (401) | **Didukung** | `jwt.WithIssuer`, `jwt.WithAudience`, dan validasi `nbf` otomatis menolak token yang klaimnya tidak cocok -> 401 ([`internal/auth/jwt.go#L97-L107`](file:///home/mark/Development/go-api-gateway/internal/auth/jwt.go#L97-L107)). |
-| **S10** | Tebakan API key berulang (brute-force rate limit) | Muncul 429 | **Didukung** | `rate-limiting` berjalan sebelum `auth`. 500 tebakan acak menaikkan counter hingga batas terlampaui -> `429 Rate limit exceeded` ([`internal/middleware/ratelimit.go#L48-L56`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L48-L56)). |
-| **S11** | Banjir permintaan sah (rate limit threshold) | 200 lalu 429 | **Didukung** | Request sah dihitung oleh window rate limit; setelah kuota per menit habis, gateway mengembalikan status 429 ([`internal/middleware/ratelimit.go#L53-L57`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L53-L57)). |
-| **S12** | Akses langsung ke upstream tanpa gateway | Gagal dari host | **Didukung** | `mock-server` hanya mem-bind port di Docker network internal, tidak membuka port ke host pada compose ([`docker-compose.test.yml`](file:///home/mark/Development/go-api-gateway/docker-compose.yml)). |
-| **S13** *(Opsional)* | *Header spoofing* (`X-User-Id`, `X-Forwarded-For`) | Amati penerusan | **Didukung** | Gateway meneruskan header klien apa adanya ke upstream tanpa sanitasi otomatis (temuan celah keamanan) ([`internal/gateway/routing.go#L375-L400`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L375-L400)). |
+| **S10** | Tebakan API key berulang (brute-force rate limit) | Muncul 429 | **Didukung** | Dengan `key_by: ip` (default), `rate-limiting` berjalan sebelum `auth` dan key memakai host dari `RemoteAddr` (tanpa port), sehingga 500 tebakan dari satu IP berbagi bucket yang sama; 60 lolos ke auth (401), iterasi 61+ menjadi 429 ([`internal/middleware/ratelimit.go#L219-L267`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L219-L267)). |
+| **S11** | Banjir permintaan sah (rate limit threshold) | 200 lalu 429 | **Didukung** | Algoritma `fixed_window` (default) mengizinkan tepat 60 request per window 60 s; request ke-61 mendapat 429. Window selaras epoch, sehingga pemulihan 200 diamati setelah 34,03 s pada run terakhir ([`internal/middleware/ratelimit.go#L235-L267`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L235-L267)). |
+| **S12** | Akses langsung ke upstream tanpa gateway | Gagal dari host | **Didukung** | `mock-server` hanya mem-bind port di Docker network internal, tidak membuka port ke host pada compose ([`experiments/compose/docker-compose.test.yml`](file:///home/mark/Development/go-api-gateway/experiments/compose/docker-compose.test.yml)). |
+| **S13** *(Opsional)* | *Header spoofing* (`X-User-Id`, `X-Forwarded-For`) | `X-User-Id` klien tidak dipercaya | **Didukung** | Pasca-`dccb182`: rute publik menghapus `X-User-Id`; rute terautentikasi menimpanya dengan subjek JWT / ID mesin terverifikasi ([`internal/gateway/routing.go#L393-L406`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L393-L406)). `X-Forwarded-For` tetap di-append oleh ReverseProxy (entri lama dikendalikan klien). |
 | **S14** *(Opsional)* | Token malformed & oversized | Gateway tidak panic | **Didukung** | Format token rusak di-handle aman oleh `bearerToken` & `golang-jwt`. Header raksasa (>64KB/1MB) ditolak aman oleh net/http tanpa panic ([`internal/auth/runtime.go#L173-L183`](file:///home/mark/Development/go-api-gateway/internal/auth/runtime.go#L173-L183)). |
 | **S15** *(Opsional)* | Timing side-channel pada API key | Ukur latensi key | **Didukung** | Hashing SHA-256 + `subtle.ConstantTimeCompare` memastikan waktu perbandingan konstan ([`internal/secrets/hash.go#L43-L48`](file:///home/mark/Development/go-api-gateway/internal/secrets/hash.go#L43-L48)). |
 
@@ -234,21 +231,21 @@ Berikut adalah temuan celah teknis dan batasan arsitektur pada kode gateway saat
    * *Temuan:* Gateway hanya menyimpan satu `expected` API key hash per runtime ([`internal/auth/api_key.go#L15`](file:///home/mark/Development/go-api-gateway/internal/auth/api_key.go#L15)).
    * *Dampak:* Gateway belum memiliki database/tabel multi-client API keys (misal key khusus Client A, key khusus Client B). Pencabutan kredensial berarti merotasi satu-satunya key gateway yang berdampak ke seluruh klien mesin.
 
-2. **Kekakuan Blok `auth:` Top-Level (Inability to Exclude Public Routes):**
-   * *Temuan:* Jika konfigurasi menggunakan blok `auth:` di level teratas `config.yaml`, runtime gateway menyuntikkan plugin auth ke **seluruh** rute secara mutlak ([`internal/gateway/routing.go#L153-L158`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L153-L158)).
-   * *Dampak:* Tidak ada mekanisme *bypass* rute publik (misal `/health` atau `/public`) jika `auth:` diaktifkan di level teratas, kecuali rute tersebut dipisahkan menggunakan format plugin per-rute.
+2. **Kekakuan Blok `auth:` Top-Level (Inability to Exclude Public Routes):** *(SELESAI diperbaiki pasca-Checkpoint 0, commit `dccb182`)*
+   * *Temuan awal:* Blok `auth:` level teratas dulu menyuntikkan plugin auth ke **seluruh** rute secara mutlak.
+   * *Perbaikan:* Injeksi global dihapus; auth hanya aktif via plugin Service/Route, dan `auth` di `global_plugins` kini ditolak validator ([`internal/config/auth.go#L373-L381`](file:///home/mark/Development/go-api-gateway/internal/config/auth.go#L373-L381)). Rute publik dapat memakai override `enabled: false`.
 
-3. **Tidak Ada Sanitasi Header Identitas Masuk (*Identity Header Spoofing Risk*):**
-   * *Temuan:* Gateway tidak membersihkan (*strip*) header identitas seperti `X-User-Id` atau klaim peran yang dikirim oleh klien sebelum mem-proxy ke upstream ([`internal/gateway/routing.go#L390-L400`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L390-L400)).
-   * *Dampak:* Jika layanan microservice di upstream mempercayai header `X-User-Id` tanpa validasi, penyerang dapat memanipulasi identitas pengguna lain meskipun token JWT yang dikirim valid.
+3. **Tidak Ada Sanitasi Header Identitas Masuk (*Identity Header Spoofing Risk*):** *(SELESAI diperbaiki pasca-Checkpoint 0, commit `dccb182`)*
+   * *Temuan awal:* Gateway meneruskan `X-User-Id` dari klien apa adanya.
+   * *Perbaikan:* `buildMiddlewareChain` menghapus `X-User-Id` pada rute publik dan menimpanya dengan identitas terverifikasi pada rute auth ([`internal/gateway/routing.go#L393-L406`](file:///home/mark/Development/go-api-gateway/internal/gateway/routing.go#L393-L406)).
 
 4. **Ketiadaan Mekanisme Pencabutan JWT Seketika (*No Token Blacklist / Denylist*):**
    * *Temuan:* Verifikasi JWT murni bersifat *stateless* (memeriksa signature dan klaim waktu `exp`/`nbf`). Gateway tidak memiliki pengecekan terhadap daftar pencabutan token (misal Redis blacklist untuk `jti`).
    * *Dampak:* Token JWT yang telah dicuri tetap valid hingga masa berlakunya (`exp`) habis, kecuali jika signing secret dirotasi secara global.
 
-5. **Rate Limiting Berbasis Memori Lokal & IP Tunggal (*In-Memory Fixed Window*):**
-   * *Temuan:* Plugin `rate-limiting` menggunakan in-memory map Go (`map[string]int`) dengan penguncian mutex lokal ([`internal/middleware/ratelimit.go#L26-L39`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go#L26-L39)).
-   * *Dampak:* Jika gateway di-deploy multi-instance, limit tidak terdistribusi (belum menggunakan Redis di binary utama). Selain itu, identifikasi hanya berdasarkan `r.RemoteAddr`, bukan identitas API key atau subjek JWT.
+5. **Rate Limiting In-Memory (sudah diperluas, tetap tidak terdistribusi):**
+   * *Temuan:* Plugin `rate-limiting` sekarang mendukung `fixed_window`, `sliding_window`, dan `token_bucket`, dengan key default IP (`RemoteAddr` tanpa port) atau JWT `sub`/`user_id`/`uid` melalui `key_by: user`. State tetap berupa map in-memory dengan mutex lokal ([`internal/middleware/ratelimit.go`](file:///home/mark/Development/go-api-gateway/internal/middleware/ratelimit.go)).
+   * *Dampak:* Jika gateway di-deploy multi-instance, limit tidak terdistribusi (belum menggunakan Redis di binary utama). Rate limit berbasis user juga membutuhkan auth JWT yang menghasilkan `auth.Context`; tanpa itu, limiter fallback ke IP.
 
 ---
 *Laporan Fase 0 selesai disusun.*

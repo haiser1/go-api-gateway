@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-11-09T08:12:13.394Z",
+  "row": {
+    "id": "F01",
+    "description": "Rute valid + kredensial valid (API key + JWT)",
+    "config": "D",
+    "request": "GET /api/v1/users + X-API-Key + Bearer JWT",
+    "expected_status": "200; body == upstream",
+    "actual_status": 200,
+    "pass": "PASS",
+    "notes": "body='{\"status\":\"mock_ok\"}'; upstream='{\"status\":\"mock_ok\"}'"
+  },
+  "raw": {
+    "response": "{\"status\":\"mock_ok\"}\n",
+    "upstream": "{\"status\":\"mock_ok\"}"
+  }
+}

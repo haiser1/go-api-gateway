@@ -1,0 +1,81 @@
+# Config RL — D + low fixed-window rate limit (60 req/min) on /api/v1/users.
+# Dedicated configuration for S10/S11 only; never used for performance runs.
+server:
+  proxy_port: 8080
+  admin_port: 8081
+  log_level: warn
+auth:
+  mode: both
+  api_key:
+    header: X-API-Key
+    secret_ref: API_KEY_HASH
+  jwt:
+    alg: HS256
+    authorization_header: Authorization
+    hs256_secret_ref: JWT_HS256_SECRET
+    issuer: thesis-test
+    audience: go-api-gateway
+    leeway: 0s
+global_plugins:
+  - name: metrics
+    enabled: false
+  - name: logger
+    enabled: false
+  - name: cors
+    enabled: false
+upstreams:
+  - id: upstream-mock
+    name: mock-upstream
+    algorithm: round-robin
+    targets:
+      - host: mock-server
+        port: 9090
+        weight: 100
+        health_check:
+          path: /health
+          interval: 30s
+services:
+  - id: svc-test-001
+    name: test-service
+    upstream_id: upstream-mock
+    protocol: http
+    timeout: 30
+    connect_timeout: 5
+    read_timeout: 30
+    retries: 0
+    plugins:
+      - name: auth
+        enabled: true
+
+routes:
+  - id: route-users-001
+    name: users-route
+    methods: [GET, POST, OPTIONS]
+    paths: [/api/v1/users]
+    service_id: svc-test-001
+    plugins:
+      - name: rate-limiting
+        enabled: true
+        config:
+          requests_per_minute: 60.0
+
+  - id: route-health-001
+    name: health-route
+    methods: [GET]
+    paths: [/health]
+    service_id: svc-test-001
+    plugins:
+      - name: auth
+        enabled: false
+
+  - id: route-echo-001
+    name: echo-route
+    methods: [GET, POST, PUT]
+    paths: [/echo]
+    service_id: svc-test-001
+
+  - id: route-rate-001
+    name: rate-route
+    methods: [GET]
+    paths: [/rate/users]
+    service_id: svc-test-001

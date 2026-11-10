@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-11-09T08:14:57.863Z",
+  "row": {
+    "id": "F03",
+    "description": "Rute publik (auth override enabled=false) tanpa kredensial",
+    "config": "D",
+    "request": "GET /health tanpa kredensial",
+    "expected_status": "200; body == upstream",
+    "actual_status": 200,
+    "pass": "PASS",
+    "notes": "body='{\"status\":\"healthy\"}'"
+  },
+  "raw": {
+    "response": "{\"status\":\"healthy\"}\n"
+  }
+}

@@ -1,0 +1,324 @@
+Prepared runtime config 'A' in /home/mark/Development/go-api-gateway/experiments/runtime
+time="2026-11-09T17:58:36+07:00" level=warning msg="buildx Docker CLI plugin not found: falling back to the classic builder. BuildKit-only build features (multi-arch, secrets, ssh, additional contexts, ...) will not be available"
+ Image compose-mock-server Building 
+ Image compose-gateway Building 
+ Image compose-mock-server Building 
+ Image compose-gateway Building 
+Sending build context to Docker daemon  550.4kBSending build context to Docker daemon  550.4kBSending build context to Docker daemon  7.979MBSending build context to Docker daemon  7.979MBSending build context to Docker daemon  25.84MBSending build context to Docker daemon  25.84MBSending build context to Docker daemon  27.94MBSending build context to Docker daemon  27.94MBSending build context to Docker daemon  30.05MBSending build context to Docker daemon  30.05MBSending build context to Docker daemon  34.58MB
+Sending build context to Docker daemon  34.58MB
+Step 1/9 : FROM golang:1.24-alpine AS builder
+Step 1/12 : FROM golang:1.26-alpine AS builder
+ ---> 8bee1901f1e5
+Step 2/9 : WORKDIR /app
+ ---> 87c65a688975
+Step 2/12 : WORKDIR /app
+ ---> Using cache
+ ---> ddcd7d78ea7b
+Step 3/12 : COPY go.mod go.sum ./
+ ---> Using cache
+ ---> 4850e10bd2b6
+Step 3/9 : COPY mock-server/main.go .
+ ---> Using cache
+ ---> ed6c4d76e2d4
+Step 4/12 : RUN go mod download
+ ---> Using cache
+ ---> 3f09fc9fb5e1
+Step 5/12 : COPY . .
+ ---> Using cache
+ ---> 8f4f1593ad19
+Step 4/9 : RUN CGO_ENABLED=0 GOOS=linux go build -o /mock-server main.go
+ ---> Using cache
+ ---> d6461083db3d
+Step 5/9 : FROM scratch
+ ---> 
+Step 6/9 : COPY --from=builder /mock-server /mock-server
+ ---> Using cache
+ ---> 6103e1a71a68
+Step 7/9 : EXPOSE 9090
+ ---> Using cache
+ ---> 7ab3759710f1
+Step 8/9 : ENTRYPOINT ["/mock-server"]
+ ---> Using cache
+ ---> d7001981ac58
+Step 9/9 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> c46170fa2688
+Successfully built c46170fa2688
+Successfully tagged compose-mock-server:latest
+ Image compose-mock-server Built 
+ Image compose-mock-server Built 
+ ---> 5f6ecdabec52
+Step 6/12 : RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -trimpath -o /api-gateway ./cmd/api-gateway
+ ---> Running in cd711cc9737d
+ ---> Removed intermediate container cd711cc9737d
+ ---> da973ed5d0f1
+Step 7/12 : FROM scratch
+ ---> 
+Step 8/12 : COPY --from=builder /api-gateway /api-gateway
+ ---> Using cache
+ ---> 6af5eb3da680
+Step 9/12 : COPY --from=builder /app/configs /configs
+ ---> Using cache
+ ---> 04a518ac372d
+Step 10/12 : EXPOSE 8080 8081
+ ---> Using cache
+ ---> c2dd27b1fc25
+Step 11/12 : ENTRYPOINT ["/api-gateway"]
+ ---> Using cache
+ ---> 33ec8bbb447f
+Step 12/12 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> f9af0edf5f05
+Successfully built f9af0edf5f05
+Successfully tagged compose-gateway:latest
+ Image compose-gateway Built 
+ Image compose-gateway Built 
+ Container test-mock-server Recreate 
+ Container test-api-gateway Recreate 
+ Container test-mock-server Recreated 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-mock-server Starting 
+ Container test-api-gateway Started 
+ Container test-mock-server Started 
+[2026-11-09T10:59:00.953766+00:00] closed repetition 1 order=['C', 'B', 'D', 'Z', 'A']
+Prepared runtime config 'C' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T10:59:01.747435+00:00] start C_vu50_closed_r1 target=gateway rate=0
+[2026-11-09T11:00:14.822816+00:00] done C_vu50_closed_r1 ok rps=7660.692850044645 p95=14.5047656
+[2026-11-09T11:00:44.823435+00:00] start C_vu100_closed_r1 target=gateway rate=0
+[2026-11-09T11:01:58.483666+00:00] done C_vu100_closed_r1 ok rps=7807.628245987336 p95=26.448177
+[2026-11-09T11:02:28.484508+00:00] start C_vu200_closed_r1 target=gateway rate=0
+[2026-11-09T11:03:42.195529+00:00] done C_vu200_closed_r1 ok rps=5642.328350541404 p95=72.60311510000002
+Prepared runtime config 'B' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:04:12.996229+00:00] start B_vu50_closed_r1 target=gateway rate=0
+[2026-11-09T11:05:26.597698+00:00] done B_vu50_closed_r1 ok rps=8065.910995291869 p95=14.424507
+[2026-11-09T11:05:56.598583+00:00] start B_vu100_closed_r1 target=gateway rate=0
+[2026-11-09T11:07:10.306435+00:00] done B_vu100_closed_r1 ok rps=8151.6676262310275 p95=25.431464699999967
+[2026-11-09T11:07:40.307430+00:00] start B_vu200_closed_r1 target=gateway rate=0
+[2026-11-09T11:08:54.377960+00:00] done B_vu200_closed_r1 ok rps=5490.648720154784 p95=86.21297259999999
+Prepared runtime config 'D' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:09:25.151881+00:00] start D_vu50_closed_r1 target=gateway rate=0
+[2026-11-09T11:10:38.546942+00:00] done D_vu50_closed_r1 ok rps=6466.164976770113 p95=17.4741193
+[2026-11-09T11:11:08.547360+00:00] start D_vu100_closed_r1 target=gateway rate=0
+[2026-11-09T11:12:22.416825+00:00] done D_vu100_closed_r1 ok rps=6690.3487774729065 p95=30.260276499999993
+[2026-11-09T11:12:52.417474+00:00] start D_vu200_closed_r1 target=gateway rate=0
+[2026-11-09T11:14:09.472346+00:00] done D_vu200_closed_r1 ok rps=5075.442154131341 p95=83.04929784999999
+[2026-11-09T11:14:39.474678+00:00] start Z_vu50_closed_r1 target=mock rate=0
+[2026-11-09T11:15:52.985239+00:00] done Z_vu50_closed_r1 ok rps=10842.348069589014 p95=11.146006550000001
+[2026-11-09T11:16:22.985629+00:00] start Z_vu100_closed_r1 target=mock rate=0
+[2026-11-09T11:17:37.147191+00:00] done Z_vu100_closed_r1 ok rps=11289.246718059452 p95=20.052774999999993
+[2026-11-09T11:18:07.148467+00:00] start Z_vu200_closed_r1 target=mock rate=0
+[2026-11-09T11:19:21.325865+00:00] done Z_vu200_closed_r1 ok rps=11661.57319773996 p95=33.7374478
+Prepared runtime config 'A' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:19:52.345289+00:00] start A_vu50_closed_r1 target=gateway rate=0
+[2026-11-09T11:21:06.001543+00:00] done A_vu50_closed_r1 ok rps=7742.79024591471 p95=15.036487999999999
+[2026-11-09T11:21:36.002300+00:00] start A_vu100_closed_r1 target=gateway rate=0
+[2026-11-09T11:22:49.696999+00:00] done A_vu100_closed_r1 ok rps=7480.628063008777 p95=27.916951049999977
+[2026-11-09T11:23:19.697436+00:00] start A_vu200_closed_r1 target=gateway rate=0
+[2026-11-09T11:24:33.197042+00:00] done A_vu200_closed_r1 ok rps=5286.911868422271 p95=80.57365799999997
+[2026-11-09T11:25:03.199517+00:00] closed repetition 2 order=['Z', 'B', 'C', 'A', 'D']
+[2026-11-09T11:25:03.199701+00:00] start Z_vu50_closed_r2 target=mock rate=0
+[2026-11-09T11:26:16.858967+00:00] done Z_vu50_closed_r2 ok rps=10808.793552053605 p95=11.195167000000001
+[2026-11-09T11:26:46.859815+00:00] start Z_vu100_closed_r2 target=mock rate=0
+[2026-11-09T11:28:00.637857+00:00] done Z_vu100_closed_r2 ok rps=11277.578185938635 p95=20.028194
+[2026-11-09T11:28:30.638795+00:00] start Z_vu200_closed_r2 target=mock rate=0
+[2026-11-09T11:29:47.442698+00:00] done Z_vu200_closed_r2 ok rps=11149.969119362311 p95=34.25235939999998
+Prepared runtime config 'B' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:30:20.094422+00:00] start B_vu50_closed_r2 target=gateway rate=0
+[2026-11-09T11:31:37.813434+00:00] done B_vu50_closed_r2 ok rps=6795.406538660825 p95=17.14035075
+[2026-11-09T11:32:07.820279+00:00] start B_vu100_closed_r2 target=gateway rate=0
+[2026-11-09T11:33:21.077800+00:00] done B_vu100_closed_r2 ok rps=5596.553462073048 p95=37.522179200000004
+[2026-11-09T11:33:51.078359+00:00] start B_vu200_closed_r2 target=gateway rate=0
+[2026-11-09T11:35:04.382048+00:00] done B_vu200_closed_r2 ok rps=4170.73199576809 p95=96.80982009999995
+Prepared runtime config 'C' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:35:35.325538+00:00] start C_vu50_closed_r2 target=gateway rate=0
+[2026-11-09T11:36:48.390925+00:00] done C_vu50_closed_r2 ok rps=4876.987552445493 p95=21.902483
+[2026-11-09T11:37:18.391682+00:00] start C_vu100_closed_r2 target=gateway rate=0
+[2026-11-09T11:38:31.898894+00:00] done C_vu100_closed_r2 ok rps=5180.670821826265 p95=40.74234
+[2026-11-09T11:39:01.899442+00:00] start C_vu200_closed_r2 target=gateway rate=0
+[2026-11-09T11:40:15.099296+00:00] done C_vu200_closed_r2 ok rps=4532.752619976532 p95=88.3342230999999
+Prepared runtime config 'A' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:40:45.921437+00:00] start A_vu50_closed_r2 target=gateway rate=0
+[2026-11-09T11:41:59.181791+00:00] done A_vu50_closed_r2 ok rps=5617.846514587776 p95=19.7197068
+[2026-11-09T11:42:29.182315+00:00] start A_vu100_closed_r2 target=gateway rate=0
+[2026-11-09T11:43:42.378968+00:00] done A_vu100_closed_r2 ok rps=5831.870543994119 p95=35.736928899999995
+[2026-11-09T11:44:12.379562+00:00] start A_vu200_closed_r2 target=gateway rate=0
+[2026-11-09T11:45:25.733056+00:00] done A_vu200_closed_r2 ok rps=4140.890490968161 p95=105.01516775
+Prepared runtime config 'D' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:45:56.656848+00:00] start D_vu50_closed_r2 target=gateway rate=0
+[2026-11-09T11:47:09.862848+00:00] done D_vu50_closed_r2 ok rps=4847.029600195687 p95=22.13357364999999
+[2026-11-09T11:47:39.863228+00:00] start D_vu100_closed_r2 target=gateway rate=0
+[2026-11-09T11:48:53.034258+00:00] done D_vu100_closed_r2 ok rps=4867.700524651204 p95=42.406401399999986
+[2026-11-09T11:49:23.034634+00:00] start D_vu200_closed_r2 target=gateway rate=0
+[2026-11-09T11:50:36.448980+00:00] done D_vu200_closed_r2 ok rps=3648.7567027785467 p95=109.839546
+[2026-11-09T11:51:06.453372+00:00] closed repetition 3 order=['B', 'C', 'D', 'Z', 'A']
+Prepared runtime config 'B' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:51:07.404129+00:00] start B_vu50_closed_r3 target=gateway rate=0
+[2026-11-09T11:52:21.051079+00:00] done B_vu50_closed_r3 ok rps=5235.304538406586 p95=21.345499600000014
+[2026-11-09T11:52:51.052340+00:00] start B_vu100_closed_r3 target=gateway rate=0
+[2026-11-09T11:54:04.962718+00:00] done B_vu100_closed_r3 ok rps=6945.233365884459 p95=30.444228699999996
+[2026-11-09T11:54:34.963632+00:00] start B_vu200_closed_r3 target=gateway rate=0
+[2026-11-09T11:55:48.695194+00:00] done B_vu200_closed_r3 ok rps=5185.945267382861 p95=83.5007195999999
+Prepared runtime config 'C' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T11:56:19.676999+00:00] start C_vu50_closed_r3 target=gateway rate=0
+[2026-11-09T11:57:32.830646+00:00] done C_vu50_closed_r3 ok rps=6609.579976574395 p95=16.832414199999977
+[2026-11-09T11:58:02.831227+00:00] start C_vu100_closed_r3 target=gateway rate=0
+[2026-11-09T11:59:16.199844+00:00] done C_vu100_closed_r3 ok rps=7448.4604629511105 p95=27.813648999999998
+[2026-11-09T11:59:46.200719+00:00] start C_vu200_closed_r3 target=gateway rate=0
+[2026-11-09T12:00:59.399841+00:00] done C_vu200_closed_r3 ok rps=5186.305815202227 p95=81.80675340000002
+Prepared runtime config 'D' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:01:30.168769+00:00] start D_vu50_closed_r3 target=gateway rate=0
+[2026-11-09T12:02:43.530462+00:00] done D_vu50_closed_r3 ok rps=7105.391230215997 p95=15.56947965
+[2026-11-09T12:03:13.531053+00:00] start D_vu100_closed_r3 target=gateway rate=0
+[2026-11-09T12:04:26.963529+00:00] done D_vu100_closed_r3 ok rps=7327.613494332876 p95=28.033405849999983
+[2026-11-09T12:04:56.964037+00:00] start D_vu200_closed_r3 target=gateway rate=0
+[2026-11-09T12:06:10.588622+00:00] done D_vu200_closed_r3 ok rps=5200.601499589559 p95=82.70208530000002
+[2026-11-09T12:06:40.593254+00:00] start Z_vu50_closed_r3 target=mock rate=0
+[2026-11-09T12:07:54.083555+00:00] done Z_vu50_closed_r3 ok rps=11059.768236644535 p95=11.18907525
+[2026-11-09T12:08:24.084103+00:00] start Z_vu100_closed_r3 target=mock rate=0
+[2026-11-09T12:09:37.560880+00:00] done Z_vu100_closed_r3 ok rps=11774.333566341766 p95=19.144188
+[2026-11-09T12:10:07.561607+00:00] start Z_vu200_closed_r3 target=mock rate=0
+[2026-11-09T12:11:21.178679+00:00] done Z_vu200_closed_r3 ok rps=11972.376738024825 p95=33.49585400000001
+Prepared runtime config 'A' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:11:51.959205+00:00] start A_vu50_closed_r3 target=gateway rate=0
+[2026-11-09T12:13:05.088150+00:00] done A_vu50_closed_r3 ok rps=8112.364368112246 p95=14.346203
+[2026-11-09T12:13:35.088793+00:00] start A_vu100_closed_r3 target=gateway rate=0
+[2026-11-09T12:14:48.401731+00:00] done A_vu100_closed_r3 ok rps=8453.796335487836 p95=24.75007499999998
+[2026-11-09T12:15:18.402462+00:00] start A_vu200_closed_r3 target=gateway rate=0
+[2026-11-09T12:16:31.976843+00:00] done A_vu200_closed_r3 ok rps=5843.240024502126 p95=79.15624950000004
+[2026-11-09T12:17:01.983242+00:00] open repetition 1 rate=4226 order=['C', 'A', 'D', 'B']
+Prepared runtime config 'C' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:17:02.821482+00:00] start C_vu200_open_r1 target=gateway rate=4226
+[2026-11-09T12:18:16.190876+00:00] done C_vu200_open_r1 ok rps=4220.643924010391 p95=5.2592
+Prepared runtime config 'A' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:18:46.895385+00:00] start A_vu200_open_r1 target=gateway rate=4226
+[2026-11-09T12:20:00.637765+00:00] done A_vu200_open_r1 ok rps=4221.679509709874 p95=3.746684299999994
+Prepared runtime config 'D' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:20:31.405387+00:00] start D_vu200_open_r1 target=gateway rate=4226
+[2026-11-09T12:21:45.468226+00:00] done D_vu200_open_r1 ok rps=4171.324060980622 p95=35.80049625
+Prepared runtime config 'B' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:22:16.205917+00:00] start B_vu200_open_r1 target=gateway rate=4226
+[2026-11-09T12:23:29.680492+00:00] done B_vu200_open_r1 ok rps=4214.838571676957 p95=9.08091425
+[2026-11-09T12:23:59.685956+00:00] open repetition 2 rate=4226 order=['D', 'B', 'A', 'C']
+Prepared runtime config 'D' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:24:00.456821+00:00] start D_vu200_open_r2 target=gateway rate=4226
+[2026-11-09T12:25:13.894833+00:00] done D_vu200_open_r2 ok rps=4201.831561458318 p95=21.894111849999987
+Prepared runtime config 'B' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:25:44.700363+00:00] start B_vu200_open_r2 target=gateway rate=4226
+[2026-11-09T12:26:58.580129+00:00] done B_vu200_open_r2 ok rps=4206.477591219273 p95=17.397713
+Prepared runtime config 'A' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:27:29.397653+00:00] start A_vu200_open_r2 target=gateway rate=4226
+[2026-11-09T12:28:42.997746+00:00] done A_vu200_open_r2 ok rps=4163.029106267511 p95=32.32567954999999
+Prepared runtime config 'C' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:29:13.760731+00:00] start C_vu200_open_r2 target=gateway rate=4226
+[2026-11-09T12:30:26.910896+00:00] done C_vu200_open_r2 ok rps=4197.733933652349 p95=21.978891949999998
+[2026-11-09T12:30:56.916242+00:00] open repetition 3 rate=4226 order=['D', 'B', 'A', 'C']
+Prepared runtime config 'D' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:30:57.754227+00:00] start D_vu200_open_r3 target=gateway rate=4226
+[2026-11-09T12:32:12.295029+00:00] done D_vu200_open_r3 ok rps=4213.007103884964 p95=9.902738199999996
+Prepared runtime config 'B' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:32:43.073003+00:00] start B_vu200_open_r3 target=gateway rate=4226
+[2026-11-09T12:33:56.339044+00:00] done B_vu200_open_r3 ok rps=4221.7437442018745 p95=9.157350499999998
+Prepared runtime config 'A' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:34:27.111028+00:00] start A_vu200_open_r3 target=gateway rate=4226
+[2026-11-09T12:35:40.392879+00:00] done A_vu200_open_r3 ok rps=4217.64483701469 p95=9.073260499999998
+Prepared runtime config 'C' in /home/mark/Development/go-api-gateway/experiments/runtime
+ Container test-api-gateway Recreate 
+ Container test-api-gateway Recreated 
+ Container test-api-gateway Starting 
+ Container test-api-gateway Started 
+[2026-11-09T12:36:11.175591+00:00] start C_vu200_open_r3 target=gateway rate=4226
+[2026-11-09T12:37:25.168107+00:00] done C_vu200_open_r3 ok rps=4208.4263272184535 p95=13.916619799999998
+[2026-11-09T12:37:55.179811+00:00] performance matrix complete

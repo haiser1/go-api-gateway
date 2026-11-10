@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-11-09T08:12:13.846Z",
+  "row": {
+    "id": "F05",
+    "description": "JWT valid saja pada rute yang butuh API key",
+    "config": "D",
+    "request": "GET /api/v1/users + Bearer JWT (tanpa X-API-Key)",
+    "expected_status": "401/403",
+    "actual_status": 401,
+    "pass": "PASS",
+    "notes": "body='{\"error\":\"API key required\"}'"
+  },
+  "raw": {
+    "response": "{\"error\":\"API key required\"}\n"
+  }
+}

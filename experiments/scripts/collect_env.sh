@@ -22,7 +22,7 @@ OS_NAME=$(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"' || uname -s
 DOCKER_VER=$(docker --version 2>/dev/null || echo "Docker not found")
 COMPOSE_VER=$(docker compose version 2>/dev/null || echo "Compose not found")
 GO_VER=$(go version 2>/dev/null || echo "Go not found")
-K6_VER=$(docker run --rm grafana/k6:latest version 2>/dev/null | head -n1 || echo "k6 v2.3.0")
+K6_VER=$(docker run --rm grafana/k6:2.3.0 version 2>/dev/null | head -n1 || echo "k6 v2.3.0")
 GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 GIT_DIRTY=$(git status --porcelain 2>/dev/null | wc -l)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
