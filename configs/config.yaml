@@ -99,7 +99,10 @@ routes:
         - name: rate-limiting
           enabled: true
           config:
-            requests_per_minute: 100
+            algorithm: fixed_window
+            requests_per_window: 100
+            window_seconds: 60
+            key_by: ip
         - name: request-transform
           enabled: true
           config:

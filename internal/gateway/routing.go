@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/haiser1/go-api-gateway/internal/auth"
@@ -315,7 +316,12 @@ func resolvePluginChain(route config.Route, service config.Service, globalPlugin
 
 func sortPluginChain(chain []config.PluginConfig) []config.PluginConfig {
 	// Sort the chain by a predefined priority list to ensure deterministic execution order:
-	// metrics/prometheus -> cors -> logger/logging -> ip-restriction/bot-detection -> rate-limiting -> authorization -> request-transform -> others
+	// metrics/prometheus -> cors -> logger/logging -> ip-restriction/bot-detection ->
+	// rate-limiting(ip) -> auth/authorization -> rate-limiting(user) -> request-transform -> others.
+	//
+	// User-keyed rate limiting runs after authentication so it can read the
+	// verified JWT identity. IP-keyed limiting stays before authentication so
+	// invalid credentials are still throttled.
 	pluginPriority := map[string]int{
 		"metrics":                0,
 		"prometheus":             0,
@@ -327,19 +333,13 @@ func sortPluginChain(chain []config.PluginConfig) []config.PluginConfig {
 		"rate-limiting":          4,
 		"auth":                   5,
 		"authorization":          5,
-		"request-transform":      6,
-		"request-transformation": 6,
+		"request-transform":      7,
+		"request-transformation": 7,
 	}
 
 	sort.Slice(chain, func(i, j int) bool {
-		p1, ok1 := pluginPriority[chain[i].Name]
-		p2, ok2 := pluginPriority[chain[j].Name]
-		if !ok1 {
-			p1 = 50
-		}
-		if !ok2 {
-			p2 = 50
-		}
+		p1 := pluginExecutionPriority(chain[i], pluginPriority)
+		p2 := pluginExecutionPriority(chain[j], pluginPriority)
 		if p1 != p2 {
 			return p1 < p2
 		}
@@ -347,6 +347,26 @@ func sortPluginChain(chain []config.PluginConfig) []config.PluginConfig {
 	})
 
 	return chain
+}
+
+func pluginExecutionPriority(plugin config.PluginConfig, defaults map[string]int) int {
+	if plugin.Name == "rate-limiting" && rateLimitUsesUserKey(plugin.Config) {
+		return 6
+	}
+	if priority, ok := defaults[plugin.Name]; ok {
+		return priority
+	}
+	return 50
+}
+
+func rateLimitUsesUserKey(cfg map[string]interface{}) bool {
+	keyBy, _ := cfg["key_by"].(string)
+	switch strings.ReplaceAll(strings.ToLower(strings.TrimSpace(keyBy)), "-", "_") {
+	case "user", "user_id", "uid":
+		return true
+	default:
+		return false
+	}
 }
 
 // retrySinkKey stores the per-attempt retry interceptor in the request

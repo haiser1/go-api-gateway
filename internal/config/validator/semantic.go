@@ -274,13 +274,58 @@ var pluginContracts = map[string]pluginContract{
 func noContract(_ string, _ int, _ map[string]interface{}) ValidationErrors { return nil }
 
 func contractRateLimit(scope string, idx int, m map[string]interface{}) ValidationErrors {
-	if v, present := m["requests_per_minute"]; present {
-		if rpm, ok := toNonNegativeNumber(v); !ok || rpm == 0 {
-			return ValidationErrors{valueError(scope, idx, "requests_per_minute",
-				fmt.Sprintf("requests_per_minute must be a number greater than 0, got %T(%v)", v, v))}
+	var errs ValidationErrors
+
+	for _, key := range []string{"requests_per_minute", "requests_per_window"} {
+		if v, present := m[key]; present {
+			if n, ok := toNonNegativeNumber(v); !ok || n == 0 {
+				errs = append(errs, valueError(scope, idx, key,
+					fmt.Sprintf("%s must be a number greater than 0, got %T(%v)", key, v, v)))
+			}
 		}
 	}
-	return nil
+	if v, present := m["window_seconds"]; present {
+		if n, ok := toNonNegativeNumber(v); !ok || n == 0 {
+			errs = append(errs, valueError(scope, idx, "window_seconds",
+				fmt.Sprintf("window_seconds must be a number greater than 0, got %T(%v)", v, v)))
+		}
+	}
+	if v, present := m["burst"]; present {
+		if _, ok := toNonNegativeNumber(v); !ok {
+			errs = append(errs, valueError(scope, idx, "burst",
+				fmt.Sprintf("burst must be a non-negative number, got %T(%v)", v, v)))
+		}
+	}
+	if v, present := m["algorithm"]; present {
+		algorithm := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(toString(v))), "-", "_")
+		switch algorithm {
+		case "fixed", "fixed_window", "sliding", "sliding_window", "token_bucket", "tokenbucket":
+		default:
+			errs = append(errs, valueError(scope, idx, "algorithm",
+				fmt.Sprintf("algorithm must be one of: fixed_window, sliding_window, token_bucket; got %q", toString(v))))
+		}
+	}
+	if v, present := m["key_by"]; present {
+		keyBy := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(toString(v))), "-", "_")
+		switch keyBy {
+		case "ip", "user", "user_id", "uid":
+		default:
+			errs = append(errs, valueError(scope, idx, "key_by",
+				fmt.Sprintf("key_by must be one of: ip, user; got %q", toString(v))))
+		}
+	}
+	if v, present := m["user_claim"]; present {
+		if s, ok := v.(string); !ok || strings.TrimSpace(s) == "" {
+			errs = append(errs, valueError(scope, idx, "user_claim",
+				"user_claim must be a non-empty string"))
+		}
+	}
+	if v, present := m["trust_forwarded_for"]; present && !isBool(v) {
+		errs = append(errs, valueError(scope, idx, "trust_forwarded_for",
+			fmt.Sprintf("trust_forwarded_for must be a bool, got %T", v)))
+	}
+
+	return errs
 }
 
 func contractAuth(scope string, idx int, m map[string]interface{}) ValidationErrors {

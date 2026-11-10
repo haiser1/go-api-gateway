@@ -155,6 +155,12 @@ func TestValidate_PluginContracts(t *testing.T) {
 	}{
 		{"rate limit zero", "rate-limiting", map[string]interface{}{"requests_per_minute": 0}, CodeInvalidPluginConfig},
 		{"rate limit string", "rate-limiting", map[string]interface{}{"requests_per_minute": "fast"}, CodeInvalidPluginConfig},
+		{"rate limit bad algorithm", "rate-limiting", map[string]interface{}{"algorithm": "leaky_bucket"}, CodeInvalidPluginConfig},
+		{"rate limit bad key_by", "rate-limiting", map[string]interface{}{"key_by": "header"}, CodeInvalidPluginConfig},
+		{"rate limit zero window", "rate-limiting", map[string]interface{}{"window_seconds": 0}, CodeInvalidPluginConfig},
+		{"rate limit negative burst", "rate-limiting", map[string]interface{}{"burst": -1}, CodeInvalidPluginConfig},
+		{"rate limit empty user claim", "rate-limiting", map[string]interface{}{"user_claim": " "}, CodeInvalidPluginConfig},
+		{"rate limit bad forwarded flag", "rate-limiting", map[string]interface{}{"trust_forwarded_for": "yes"}, CodeInvalidPluginConfig},
 		{"auth unknown type", "auth", map[string]interface{}{"type": "basic"}, CodeInvalidPluginConfig},
 		{"auth unknown alg", "auth", map[string]interface{}{"type": "jwt", "alg": "HS384"}, CodeInvalidPluginConfig},
 		{"auth empty jwt key", "auth", map[string]interface{}{"jwt_key": ""}, CodeInvalidPluginConfig},
@@ -190,7 +196,11 @@ func TestValidate_PluginContracts(t *testing.T) {
 	t.Run("correct plugin configs pass", func(t *testing.T) {
 		cfg := fullConfig()
 		cfg.GlobalPlugins = []config.PluginConfig{
-			{Name: "rate-limiting", Enabled: true, Config: map[string]interface{}{"requests_per_minute": 60}},
+			{Name: "rate-limiting", Enabled: true, Config: map[string]interface{}{
+				"algorithm": "sliding_window", "requests_per_window": 60,
+				"window_seconds": 60, "key_by": "user", "user_claim": "sub",
+				"trust_forwarded_for": true,
+			}},
 			{Name: "cors", Enabled: true, Config: map[string]interface{}{"allowed_origins": []interface{}{"http://x.com"}, "max_age": 100}},
 			{Name: "ip-restriction", Enabled: true, Config: map[string]interface{}{"status_code": 403}},
 			{Name: "bot-detection", Enabled: true, Config: map[string]interface{}{"blocked_bots": []string{"sqlmap"}}},
